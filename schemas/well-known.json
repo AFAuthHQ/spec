@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://afauth.org/schemas/well-known.json",
+  "title": "AFAuth service discovery document",
+  "description": "Schema for the JSON document published at /.well-known/afauth",
+  "type": "object",
+  "required": ["afauth_version", "service_did", "endpoints", "signature_algorithms"],
+  "properties": {
+    "afauth_version": {
+      "type": "string",
+      "description": "Protocol version supported by this service",
+      "examples": ["0.1"]
+    },
+    "service_did": {
+      "type": "string",
+      "description": "The service's own DID (did:web or did:key)",
+      "pattern": "^did:(web|key):.+"
+    },
+    "endpoints": {
+      "type": "object",
+      "required": ["accounts", "owner_invitation", "claim_page"],
+      "properties": {
+        "accounts":         { "type": "string" },
+        "owner_invitation": { "type": "string" },
+        "claim_page":       { "type": "string", "format": "uri" },
+        "key_rotation":     { "type": "string" }
+      }
+    },
+    "signature_algorithms": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["ed25519", "ecdsa-p256"] },
+      "minItems": 1
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["two_step_invite", "attestation", "key_rotation"]
+      }
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "unclaimed_ttl_seconds":         { "type": "integer", "minimum": 0 },
+        "unclaimed_rate_limit_per_hour": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "billing": {
+      "type": "object",
+      "required": ["unclaimed_mode"],
+      "properties": {
+        "unclaimed_mode": {
+          "type": "string",
+          "enum": ["free", "attested_only", "denied"]
+        },
+        "accepted_attestors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
