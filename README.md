@@ -18,7 +18,7 @@ This repository contains the specification for **AFAuth** — an open protocol t
 ## Reference implementations
 
 - CLI + agent: [`github.com/AFAuthHQ/cli`](https://github.com/AFAuthHQ/cli)
-- TypeScript SDKs: [`github.com/AFAuthHQ/typescript`](https://github.com/AFAuthHQ/typescript)
+- TypeScript SDKs: [`github.com/AFAuthHQ/typescript-sdk`](https://github.com/AFAuthHQ/typescript-sdk)
 
 Alternative implementations are welcome. The protocol is intentionally small and language-agnostic.
 
