@@ -11,9 +11,9 @@ This repository contains the specification for **AFAuth** — an open protocol t
 ## Layout
 
 - [`spec/core.md`](spec/core.md) — the protocol specification
-- [`spec/conformance.md`](spec/conformance.md) — what an implementation must support to call itself AFAuth-conformant
+- [`spec/conformance.md`](spec/conformance.md) — conformance criteria (stub; full test suite planned)
 - [`schemas/well-known.json`](schemas/well-known.json) — JSON Schema for the `/.well-known/afauth` discovery document
-- [`proposals/`](proposals/) — AFAPs (AFAuth Protocol Proposals)
+- [`proposals/`](proposals/README.md) — AFAuth Protocol Proposals (AFAPs)
 
 ## Reference implementations
 

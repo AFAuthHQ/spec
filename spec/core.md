@@ -82,6 +82,21 @@ This specification does NOT define:
 - The user interface presented during the claim flow.
 - The mechanism by which agents discover services in the first place (out of scope).
 - Inter-agent communication or delegation (covered by other protocols such as Google A2A).
+- What operations an agent may perform at any given account state (see §7.5 and §12.7).
+
+### 1.4 Relationship to other standards
+
+AFAuth is one of several converging standards for AI-agent interaction with services. It addresses agent identity, which is currently the gap in this stack; it composes with rather than replaces the capability and authorization layers around it.
+
+| Layer | Examples | AFAuth's role |
+|---|---|---|
+| Capability / transport | Model Context Protocol (MCP), Agent2Agent (A2A) | The AFAuth account DID can be carried in MCP's Client ID Metadata Document (CIMD) URL and in A2A Agent Card identity fields. |
+| Authorization | OAuth 2.0 `actor_token` (`draft-oauth-ai-agents-on-behalf-of-user`), OIDC for AI Agents, FIDO Agent Payments Protocol (AP2), Visa Trusted Agent Protocol, Mastercard Verifiable Intent | An AFAuth-signed assertion serves as the `actor_token` for OAuth-style delegation flows and as the cryptographic identity inside payment-authorization tokens. |
+| **Identity** | **AFAuth** | Provides a self-sovereign agent identity for the open web. |
+
+Prior art in self-issued account identity informs the design but is not directly imported: AT Protocol uses email-confirmed account creation rather than agent-first; Nostr's experience with self-issued keys highlights the importance of planned-for key rotation. Microsoft Entra Agent ID provides agent identity for managed enterprise environments and may serve as an attestor (see §10) for AFAuth accounts that need to vouch for an enterprise runtime context.
+
+The protocol does not require integration with any specific external standard; the relationships listed above are interoperability paths that conforming implementations MAY follow.
 
 ---
 
@@ -105,19 +120,47 @@ All cryptographic operations MUST use constant-time implementations to avoid sid
 
 ### 3.1 Account identifiers
 
-An AFAuth account is identified by a Decentralized Identifier ([W3C-DID-CORE]) using the `did:key` method ([W3C-DID-KEY]):
+An AFAuth account is identified by a Decentralized Identifier ([W3C-DID-CORE]). Conforming services MUST accept account identifiers using the `did:key` method ([W3C-DID-KEY]), and SHOULD accept the `did:web` method ([W3C-DID-WEB]) for accounts intended to persist across key rotation.
+
+#### 3.1.1 did:key
+
+A `did:key` identifier encodes the account's public key directly:
 
 ```
 did:key:<multibase-multicodec-pubkey>
 ```
 
-For Ed25519 keys, the encoded form uses the multicodec prefix `0xed01` followed by the 32-byte raw public key, encoded together as a multibase base58btc string. Example:
+For Ed25519 keys, the encoded form is the multicodec prefix for Ed25519 (registered varint `0xed01`) followed by the 32-byte raw public key, encoded as a multibase base58btc string. Example:
 
 ```
 did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW
 ```
 
-The account DID is derived entirely from the public key. Services MUST NOT require any central registry lookup to validate an account DID; they MUST validate it locally by decoding the multibase string and using the recovered public key for signature verification.
+The account DID is derived entirely from the public key. Services MUST validate it locally by decoding the multibase string and using the recovered public key for signature verification; they MUST NOT require any central registry lookup.
+
+Implementations MUST validate the canonical form of a `did:key` identifier:
+
+- The multicodec prefix MUST be decoded as an unsigned varint, not compared byte-wise. The Ed25519 codec value is `0xed`; its varint encoding is the two-byte sequence `0xed 0x01`. Implementations that byte-compare against `0xed01` without performing varint decoding will reject some valid encodings and may accept malformed ones; see [did-key-issue-35].
+- Implementations MUST reject any multibase string that does not round-trip to its canonical encoding. Base58btc has no built-in length check and admits non-canonical encodings (e.g., leading-zero padding); accepting non-canonical forms permits two distinct strings to resolve to the same public key, which breaks equality-based account lookup.
+- Implementations MUST reject any payload whose length after the codec prefix is not exactly 32 bytes for Ed25519.
+
+`did:key` has no rotation or revocation mechanism within the DID method itself: rotating the verification key necessarily changes the account identifier (see §8.1). Implementations operating long-lived accounts SHOULD use `did:web` instead.
+
+#### 3.1.2 did:web
+
+A `did:web` identifier encodes a DNS-anchored authority:
+
+```
+did:web:<host>[:path]
+```
+
+The DID document is fetched from `https://<host>/.well-known/did.json` (or the path-derived URL) per [W3C-DID-WEB]. Conforming services that accept `did:web` MUST cache the DID document with a reasonable TTL (RECOMMENDED ≤ 1 hour) and re-fetch on signature verification failure.
+
+`did:web` supports key rotation without changing the account identifier: the controller publishes a new public key in the DID document and the identifier persists. Services MUST verify signatures against the verification method currently published in the DID document.
+
+#### 3.1.3 Future methods
+
+Future versions of this specification may add support for additional DID methods (e.g., `did:plc`) that provide stable account identity with rotatable verification keys without depending on DNS. See Appendix D for design rationale.
 
 ### 3.2 Key generation
 
@@ -127,11 +170,11 @@ Implementations are RECOMMENDED to store private keys in OS-level keystores, har
 
 ### 3.3 Portability and derivation
 
-By default, an agent's `did:key` is reusable across services: the same key authenticates the same agent to multiple services without modification. Conforming services MUST accept this mode.
+By default, agents SHOULD derive a per-service signing key using a deterministic key-derivation function such as HKDF [RFC5869] over a master key, with the service's DID as the `info` parameter. This produces a distinct account identifier per service and prevents cross-service correlation of an agent's activity. From the service's point of view, the request is signed by an unrelated Ed25519 keypair; the derivation is invisible.
 
-Agents that require cross-service unlinkability MAY derive a per-service key using a deterministic key-derivation function such as HKDF [RFC5869] over a master key, with the service's DID as the `info` parameter. This is invisible to services; from the service's point of view, the request is signed by an unrelated Ed25519 keypair.
+Agents that explicitly require a single portable identifier across services MAY reuse the same key (and therefore the same account identifier) across services. Conforming services MUST accept both modes; from the service's point of view, derived and portable identifiers are indistinguishable.
 
-This specification does not mandate either policy. Both modes are permitted.
+Per-service derivation is the recommended default for new agent implementations. The prior default of portable identifiers is preserved as an opt-out for operators that depend on cross-service identity continuity (for example, agents that interact with multiple services that share an out-of-band trust relationship in the agent).
 
 ---
 
@@ -159,17 +202,18 @@ A discovery response:
     "accounts":         "/afauth/v1/accounts",
     "owner_invitation": "/afauth/v1/accounts/me/owner-invitation",
     "claim_page":       "https://claim.example.com",
+    "claim_completion": "/afauth/v1/claim",
     "key_rotation":     "/afauth/v1/accounts/me/keys/rotate"
   },
   "signature_algorithms": ["ed25519"],
-  "features": ["two_step_invite", "attestation", "key_rotation"],
+  "features": ["attestation", "key_rotation"],
   "limits": {
     "unclaimed_ttl_seconds":         2592000,
     "unclaimed_rate_limit_per_hour": 100
   },
   "billing": {
     "unclaimed_mode": "free",
-    "accepted_attestors": ["stripe-projects", "entra-agent-id"]
+    "accepted_attestors": ["stripe-projects", "microsoft-entra-agent-id"]
   }
 }
 ```
@@ -181,13 +225,13 @@ The full JSON Schema is provided alongside this specification at [`../schemas/we
 ### 4.3 Required fields
 
 - `afauth_version` (string): The protocol version this service speaks. For this specification, the value is `"0.1"`.
-- `service_did` (string): A DID identifying the service. RECOMMENDED to use `did:web:<host>`; `did:key:...` is also permitted.
-- `endpoints` (object): URLs for the protocol's endpoints. Paths MAY be absolute or relative to the discovery document's origin. Members defined in this version: `accounts`, `owner_invitation`, `claim_page`, `key_rotation`.
+- `service_did` (string): A DID identifying the service. Implementations SHOULD use `did:web:<host>` so the service's identity is anchored in DNS and TLS rather than in a self-issued public key. `did:key:...` is permitted but provides no authority anchor — a hostile party that controls the connection on which the discovery document is fetched can claim any `did:key` value — and is appropriate only for niche service-to-service contexts. See §12.8 for the related threat model.
+- `endpoints` (object): URLs for the protocol's endpoints. Paths MAY be absolute or relative to the discovery document's origin. Members defined in this version: `accounts`, `owner_invitation`, `claim_page`, `claim_completion`, `key_rotation`. The token is appended as the final path segment of `claim_completion` (see §7.4).
 - `signature_algorithms` (array of strings): Algorithms the service accepts. MUST include `"ed25519"` for conformance.
 
 ### 4.4 Optional fields
 
-- `features` (array of strings): Optional features the service supports. Defined values: `"two_step_invite"`, `"attestation"`, `"key_rotation"`. Absent features MUST NOT be assumed supported.
+- `features` (array of strings): Optional features the service supports. Defined values: `"attestation"`, `"key_rotation"`. Absent features MUST NOT be assumed supported. Two-step invite is normatively required for v0.1 conformance (§7.1) and is not an advertisable feature.
 - `limits` (object): Service-declared limits. Defined members: `unclaimed_ttl_seconds`, `unclaimed_rate_limit_per_hour`.
 - `billing` (object): Pre-claim billing declaration. See Section 9.
 
@@ -205,30 +249,39 @@ AFAuth uses HTTP Message Signatures [RFC9421] for all authenticated requests. Th
 
 Implementations MUST support the `ed25519` signature algorithm as defined by RFC 9421.
 
-### 5.2 Required signed components
+### 5.2 Required signed components and parameters
 
-Every AFAuth-authenticated request MUST include the following signed components in its `Signature-Input` header:
+Every AFAuth-authenticated request MUST include the following in its `Signature-Input` header.
 
-| Component | Purpose |
-|---|---|
-| `@method` | HTTP method |
-| `@target-uri` | Full request URI |
-| `@authority` | Pins the host (prevents cross-service replay) |
-| `content-digest` | SHA-256 of the body, per [RFC9530], for requests with a non-empty body |
-| `afauth-account` | The account's DID (lowercase header name) |
-| `created` | Signing timestamp, for freshness |
-| `nonce` | Unique value to prevent replay |
+**Covered components** (the message elements being signed):
 
-The signature input string MUST be constructed per the canonicalisation rules of RFC 9421.
+| Component | Required when | Purpose |
+|---|---|---|
+| `@method` | Always | HTTP method |
+| `@target-uri` | Always | Full request URI; subsumes the authority for cross-service replay binding |
+| `content-digest` | Request body is non-empty | SHA-256 of the body, per [RFC9530] |
+
+**Signature parameters** (per RFC 9421 §2.3):
+
+| Parameter | Required | Purpose |
+|---|---|---|
+| `created` | Yes | Signing timestamp |
+| `expires` | Yes | Hard expiration timestamp for the signature |
+| `nonce` | Yes | Unique value to prevent replay |
+| `keyid` | Yes | The account's DID — the sole identity surface |
+| `alg` | Yes | Signature algorithm (e.g., `ed25519`) |
+
+`expires` MUST be no more than 300 seconds after `created`. The signature input string MUST be constructed per the canonicalisation rules of RFC 9421.
+
+Earlier drafts of this specification required signing an `@authority` derived component and an `AFAuth-Account` header. Both have been removed: `@target-uri` subsumes the authority for replay binding, and `keyid` is the sole identity surface to avoid the split-brain failure mode described in RFC 9421 §7.3.4. Implementations MUST NOT require either.
 
 ### 5.3 Headers
 
 This specification introduces or relies on the following HTTP headers:
 
-- `AFAuth-Account` (introduced): The account's DID. Required on every authenticated request. Lowercased as `afauth-account` when used as a signed component name.
 - `AFAuth-Attestation` (introduced, optional): Carries an attestation token, as defined in Section 10.
-- `Content-Digest`: As defined by [RFC9530]. Required for requests with non-empty bodies.
-- `Signature-Input`, `Signature`: As defined by [RFC9421].
+- `Content-Digest`: As defined by [RFC9530]. Required for requests with a non-empty body; MUST be omitted otherwise.
+- `Signature-Input`, `Signature`: As defined by [RFC9421]. The account's DID is carried in the `keyid` signature parameter (see §5.2); no separate identity header is defined.
 
 ### 5.4 Example
 
@@ -237,10 +290,9 @@ POST /afauth/v1/accounts/me/owner-invitation HTTP/1.1
 Host: api.example.com
 Content-Type: application/json
 Content-Digest: sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
-AFAuth-Account: did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW
-Signature-Input: sig1=("@method" "@target-uri" "@authority" \
-                       "content-digest" "afauth-account");\
-                 created=1715000000;nonce="9f8b3a7c1d2e4f56";\
+Signature-Input: sig1=("@method" "@target-uri" "content-digest");\
+                 created=1715000000;expires=1715000060;\
+                 nonce="9f8b3a7c1d2e4f56";\
                  keyid="did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW";\
                  alg="ed25519"
 Signature: sig1=:0123abcde...:
@@ -252,19 +304,21 @@ Signature: sig1=:0123abcde...:
 
 On receiving a signed request, a service MUST:
 
-1. Parse the `Signature-Input` header and verify that all required components (Section 5.2) are listed.
+1. Parse the `Signature-Input` header and verify that all required covered components and signature parameters (Section 5.2) are present.
 2. Construct the canonical signature input string per RFC 9421.
-3. Decode the public key from the `keyid` (which MUST equal the `AFAuth-Account` DID).
+3. Resolve the account's public key from the `keyid` value — by decoding the multibase-multicodec representation for `did:key` (per §3.1.1), or by fetching the DID document for `did:web` (per §3.1.2).
 4. Verify the signature using the algorithm declared in `alg`.
-5. Verify that `created` is within an acceptable freshness window (RECOMMENDED: 60 seconds).
-6. Verify that the `nonce` has not been seen before for this account within the freshness window.
-7. If the request has a non-empty body, verify the `Content-Digest` matches a SHA-256 hash of the actual body.
+5. Verify that the current time is between `created` and `expires` inclusive, with a tolerance for clock skew (RECOMMENDED: ±60 seconds).
+6. Verify that the `nonce` has not been seen before for this `keyid` within the storage window (see §5.6).
+7. If the request has a non-empty body, verify the `Content-Digest` header matches a SHA-256 hash of the actual body. If the request has no body, the `Content-Digest` header MUST NOT be present.
 
 If any step fails, the service MUST respond with `401 Unauthorized` and SHOULD include an error body (Section 11) indicating the failure reason.
 
 ### 5.6 Replay protection
 
-Services MUST maintain a sliding window of seen `(account_did, nonce)` tuples covering at least the freshness window. Storage cost is bounded by `unclaimed_rate_limit_per_hour` (Section 4.4).
+Services MUST maintain a set of seen `(keyid, nonce)` tuples covering at least the duration of the freshness window. The storage window MUST be at least `expires - created + skew_tolerance`. Implementations commonly use a time-bounded set such as Redis with `SETNX … EX`.
+
+Replay defense is scoped to `keyid` (the cryptographic origin) rather than to the account identifier; this preserves correct replay detection across key rotation (§8), where a single account identifier may be presented under successive verification keys.
 
 Services MAY accept signed requests outside the freshness window for non-mutating `GET` operations, at their discretion, but MUST NOT accept replayed mutating requests.
 
@@ -293,6 +347,8 @@ See Appendix A for the diagram. Conforming services MUST NOT permit transitions 
 The first valid signed request from an unrecognised account DID MUST cause the service to create the account in state `UNCLAIMED`, unless the service requires explicit signup (Section 6.4).
 
 This mode optimizes for agent ergonomics: an agent that has just generated a keypair can call any protected endpoint and have its account auto-created. The service MUST NOT distinguish externally between "implicit signup followed by operation" and a request to a pre-existing account.
+
+Services that declare `billing.unclaimed_mode = "attested_only"` (§9) MUST reject implicit-signup attempts lacking a valid `AFAuth-Attestation` header (§10) with `401 Unauthorized` and error code `attestation_required`. The service MUST NOT create the account in this case; the rejection MUST occur before any state transition.
 
 ### 6.4 Explicit signup
 
@@ -390,7 +446,7 @@ Content-Type: application/json
 Field semantics:
 
 - `email` (string, required): The email address to invite. MUST be a syntactically valid mailbox per [RFC5321].
-- `redirect_url` (string, optional): URL to redirect to after successful claim. Services SHOULD validate it against an allow-list and MUST NOT honour redirects to untrusted hosts.
+- `redirect_url` (string, optional): URL to redirect to after successful claim. Services MUST validate it against an allow-list of service-controlled hosts and MUST NOT honour redirects to hosts outside that list. An unvalidated redirect parameter is a well-known open-redirect class of vulnerability and is rejected from the protocol's wire surface, not just discouraged.
 
 Successful response:
 
@@ -409,15 +465,19 @@ The service MUST send a magic-link email to the invited address. The magic link 
 
 If the invitation expires without a successful claim, the service MUST transition the account back to `UNCLAIMED` and discard the pending email.
 
-### 7.3 Invitation TTL
+### 7.3 Invitation lifetime and atomicity
 
-The default invitation TTL is 7 days. Services MAY configure a shorter TTL but MUST NOT exceed 14 days.
+Each invitation has a service-defined TTL. The protocol gives no normative bound; services SHOULD choose a TTL appropriate to the value of the underlying account. For most consumer contexts, 24 to 72 hours is typical.
 
-Multiple invitations for the same account are permitted, but the most recent invitation supersedes any prior pending one; older invitations MUST be invalidated.
+At most one invitation MAY be pending for an account at any time. A new owner invitation request atomically replaces any prior pending invitation: the prior invitation's token MUST be invalidated, and any subsequent claim attempt using the invalidated token MUST fail with `410 Gone` and error code `invitation_expired`. Atomicity MUST be enforced at the storage layer (for example, via a unique constraint on the account's pending invitation and a serialised update path) to prevent race conditions between concurrent invitation requests.
+
+If an invitation's TTL expires without a successful claim, and no replacement has been issued, the account transitions back to `UNCLAIMED` and the pending email is discarded. If the unclaimed TTL itself elapses while an invitation is pending, the account transitions to `EXPIRED` (see Appendix A).
+
+This atomicity invariant replaces the "most recent invitation supersedes" model of earlier drafts, which permitted a window in which two concurrent invitations could both be valid; that window is the basis of a known time-of-check / time-of-use class of attack.
 
 ### 7.4 Claim completion
 
-The human follows the magic link to the service's hosted claim page (`endpoints.claim_page` from discovery). After completing whatever human-authentication flow the service offers (magic link, passkey, OAuth), the page calls:
+The human follows the magic link to the service's hosted claim page (`endpoints.claim_page` from discovery). After completing whatever human-authentication flow the service offers (magic link, passkey, OAuth), the page POSTs to the `endpoints.claim_completion` URL with the token as the final path segment:
 
 ```http
 POST /afauth/v1/claim/<token> HTTP/1.1
@@ -425,6 +485,8 @@ Host: api.example.com
 Content-Type: application/json
 Cookie: session=<human session>
 ```
+
+(The path `/afauth/v1/claim/` shown above is the example value of `endpoints.claim_completion`; conforming services MUST use whatever value they declare in their own discovery document, with the token appended.)
 
 Response on success:
 
@@ -440,7 +502,9 @@ Response on success:
 }
 ```
 
-Only at this moment does the account transition to `CLAIMED`. The service MUST:
+Before the binding commits, the service MUST verify that the human's authenticated identity matches `pending_email`. The matching policy is service-defined — exact case-insensitive match per [RFC5321] §2.4 is sufficient for most services; services that accept federated identity (OIDC, SAML) MAY match against any email provably controlled by the authenticated identity. The service MUST NOT bind an owner whose authenticated identity cannot be matched to the invited address; in that case the service MUST reject the claim with `403 Forbidden` and error code `owner_authentication_required`, and the invitation MUST remain pending until the TTL expires or a matching authentication is presented.
+
+Only after the authenticated identity has been verified to match `pending_email` does the account transition to `CLAIMED`. The service MUST:
 
 - Persist `owner_email = pending_email` and clear the pending field.
 - Issue any post-claim session credentials (cookie, JWT, etc.) per the service's authentication system.
@@ -448,12 +512,17 @@ Only at this moment does the account transition to `CLAIMED`. The service MUST:
 
 ### 7.5 Authority model post-claim
 
-After an account is `CLAIMED`, the agent's key continues to authorize operations on behalf of the owner. Specifically:
+After an account is `CLAIMED`, both the agent and the owner are first-class principals on the account. The agent's key continues to authorize ordinary operations that the service exposes for agents; no re-authorization by the owner is required for the agent to continue operating.
 
-- The agent key MUST continue to authenticate ordinary requests (the operations the service exposes for agents).
-- Operations that **change ownership** (e.g., updating `owner_email`, transferring the account to another user, deleting the account) MUST require a fresh **owner session**, NOT the agent's signature.
+The protocol defines a single normative constraint on post-claim agent authority:
 
-This split is normative: a service that allows agent-key-alone ownership changes after claim is NOT conformant with v0.1.
+> An operation that modifies which credentials can authenticate as the owner MUST require an owner-authenticated session; the agent key alone MUST NOT authorize such an operation.
+
+This category — termed **owner-binding operations** — includes, at a minimum: changing the bound owner identity, enrolling additional authentication credentials, adding or modifying recovery contacts that authenticate as the owner, linking federated identities, and adding additional principals to the account. The mapping from this category to concrete service operations is service-defined; services MUST classify their own operations against this rule.
+
+This constraint preserves the durability of the two-step verify invariant (§7.1) past the moment of binding: revoking a compromised agent key under §8.4 fully restores the owner's sole authentication authority, because no authentication path planted by the agent alone can exist.
+
+Beyond this single rule, the protocol takes no position on what an agent may do at any account state. Pre-claim agent authority, post-claim agent scope beyond the owner-binding rule above, the form of any claim-time manifest, and the treatment of obligations incurred pre-claim are all service responsibilities. See §12.7 for the security risks the protocol delegates to services.
 
 ### 7.6 Agent-driven re-invitation
 
@@ -465,7 +534,7 @@ In `CLAIMED` state, the agent MAY initiate a new invitation only if the existing
 
 ### 8.1 Pre-claim key rotation
 
-While the account is in `UNCLAIMED` or `INVITED` state, an agent MAY rotate its key by signing a rotation request with the old key:
+While the account is in `UNCLAIMED` or `INVITED` state, an agent MAY rotate its verification key by signing a rotation request with the old key:
 
 ```http
 POST /afauth/v1/accounts/me/keys/rotate HTTP/1.1
@@ -487,7 +556,12 @@ Response:
 }
 ```
 
-The account DID becomes the new value. The old key is added to the revocation list (Section 8.3) and MUST be rejected on future requests.
+Behaviour by DID method:
+
+- **`did:key`:** the account identifier necessarily changes, because the identifier encodes the public key. From the service's perspective, the old DID is decommissioned (added to the revocation list per §8.3) and the new DID becomes the account's identifier. External references held to the old DID will no longer resolve to this account.
+- **`did:web`:** the account identifier remains the same. The agent publishes the new verification key in the DID document at the established URL; the service re-fetches the DID document and verifies subsequent signatures against the new verification method. The service's revocation list (§8.3) records the verification-method change without changing the account identifier.
+
+Implementations operating long-lived accounts SHOULD use `did:web` for this reason; see §3.1.
 
 ### 8.2 Post-claim key rotation
 
@@ -603,7 +677,9 @@ Field semantics:
 
 Conforming services MUST use these codes when the corresponding condition applies:
 
-`invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `account_expired`, `rate_limit_exceeded`, `malformed_request`.
+`invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `owner_binding_blocked`, `account_expired`, `rate_limit_exceeded`, `malformed_request`.
+
+`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general.
 
 Services MAY define additional error codes for service-specific conditions, but SHOULD prefix them with a service-specific namespace (e.g., `example_quota_exceeded`).
 
@@ -619,15 +695,15 @@ If a key is compromised pre-claim, an attacker holding it can invite their own e
 
 ### 12.2 Replay
 
-The combined use of `created`, `nonce`, and `@authority` in signed components binds each signed request to a specific service, time window, and unique value. The freshness-window and seen-nonce mechanism (Section 5.6) prevents replay within the window. Services MUST NOT relax the nonce check for mutating requests.
+The combined use of `created`, `expires`, `nonce`, and `@target-uri` in the signature input binds each signed request to a specific service host, time window, and unique value. The freshness-window and seen-nonce mechanism (Section 5.6) prevents replay within the window. Services MUST NOT relax the nonce check for mutating requests.
 
-### 12.3 Phishing in the claim flow
+### 12.3 Claim ceremony strength
 
-The magic-link claim flow is vulnerable to ordinary email phishing (an attacker tricks the recipient into forwarding the link). Services SHOULD:
+The strength of the claim ceremony (§7.4) depends on the human-authentication method the service chooses. The protocol permits services to require any human-authentication flow at the claim page — magic link, passkey, OIDC, or others — and takes no position on the choice.
 
-- Display a summary of agent activity on the claim page before completing the bind, so the human can recognise an unfamiliar context.
-- Use short invitation TTLs (default 7 days; lower MAY be appropriate for sensitive services).
-- Require an additional human factor (passkey, OAuth) on the claim page beyond clicking the magic link.
+Services SHOULD select a method appropriate to the value of the account. Email-based magic links are classified as AAL1 by [NIST-SP-800-63B] and are vulnerable to adversary-in-the-middle phishing, prefetch consumption by email-security scanners, and downstream effects of email-account takeover. Phishing-resistant methods (WebAuthn / FIDO2 passkeys) provide AAL2, with hardware-bound credentials reaching AAL3. Services that require stronger assurance SHOULD require phishing-resistant authentication at the claim page and for owner-binding operations (§7.5).
+
+If a service uses magic links as a claim mechanism, it SHOULD require an active POST confirmation on the landing page rather than treating a GET as token consumption, to defend against link prefetching by email-security scanners. The service SHOULD also provide sufficient context for the human to recognise the originating agent before committing the binding; static informational banners are known to be ineffective under habituation, so active acknowledgement is preferable.
 
 ### 12.4 Cross-service correlation
 
@@ -640,6 +716,32 @@ Services that accept agent attestations MUST validate the attestor's signature a
 ### 12.6 Email channel security
 
 Magic-link emails transit through email infrastructure not controlled by the service. Services MUST use HTTPS for the magic link URL itself and SHOULD NOT include sensitive account context in the email body. Confirmation links MUST be single-use and bound to the originating invitation.
+
+### 12.7 Pre-claim account state
+
+An agent — or any party in possession of the agent's key before claim — may accumulate account state during the `UNCLAIMED` and `INVITED` windows: configurations, integrations, billing relationships, member lists, recovery contacts, additional credentials, prior tool history. Such state survives the transition to `CLAIMED` and may include attacker-controlled values not authorised by the eventual owner. This is the inverse of the pre-hijack attack class documented in [Sudhodanan-Paverd-2022].
+
+The protocol's two-step verify (§7.1) prevents the agent's signature from binding ownership directly, and the post-claim owner-binding floor (§7.5) prevents the agent from rebuilding an authentication path after claim. Neither addresses the broader question of *what state the agent has accumulated* before binding.
+
+This is outside the scope of the protocol. Services are responsible for:
+
+- Determining what operations an agent may perform on an `UNCLAIMED` or `INVITED` account.
+- Surfacing pre-claim state to the claiming human in a form they can evaluate, accept, or reset.
+- Deciding how financial or contractual obligations incurred pre-claim are transferred (or not) at claim.
+
+A service that permits an agent to make sovereignty-style changes (recovery contacts, payment methods, additional members) pre-claim without an owner-acceptance step at claim has not technically violated the protocol but has accepted a risk that this specification deliberately delegates. Services SHOULD document their pre-claim policy and surface it to humans during the claim flow.
+
+### 12.8 Discovery document integrity
+
+The `/.well-known/afauth` document declares the service's identity, accepted algorithms, endpoints, attestor list, and billing policy. Agents rely on it to construct correctly-formed requests and to evaluate the service before signup. The protocol does not specify integrity protection for the document itself in v0.1; integrity depends on TLS for the connection on which it is fetched.
+
+A network attacker capable of compromising TLS — or a hostile intermediary in front of the service — could rewrite the document to downgrade `signature_algorithms`, redirect `endpoints`, or substitute `service_did`. Operators SHOULD:
+
+- Serve the discovery document only over HTTPS with HSTS enabled.
+- Pin the service's verification key fingerprint out-of-band where this is feasible (for example, in first-party agent distributions).
+- Treat any change in the document's `service_did` value with suspicion if observed during the lifetime of an agent.
+
+Future versions of this specification may require the discovery document itself to be signed by the service's DID.
 
 ---
 
@@ -682,8 +784,9 @@ This specification requests registration of the following HTTP field names per [
 
 | Field name | Status | Reference |
 |---|---|---|
-| `AFAuth-Account` | Provisional | This document, Section 5.3 |
 | `AFAuth-Attestation` | Provisional | This document, Section 10.2 |
+
+Earlier drafts of this specification reserved an `AFAuth-Account` field; that registration has been withdrawn. The account's DID is carried in the `keyid` parameter of the `Signature-Input` header (see §5.2) and is not duplicated in a separate header.
 
 ### 14.3 DID Methods
 
@@ -709,15 +812,20 @@ This specification uses the `did:key` method [W3C-DID-KEY]. No new DID method is
 - **[RFC9530]** Polli, R. and L. Pardue, "Digest Fields", RFC 9530, February 2024.
 - **[W3C-DID-CORE]** Sporny, M., Longley, D., Sabadello, M., Reed, D., Steele, O., and C. Allen, "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, July 2022.
 - **[W3C-DID-KEY]** Longley, D., and D. Zagidulin, "The did:key Method v0.7", W3C Community Group Report.
+- **[W3C-DID-WEB]** Steele, O., Sporny, M., et al., "did:web Method Specification", W3C Credentials Community Group.
+- **[did-key-issue-35]** "Multicodec varint decoding ambiguity in did:key", w3c-ccg/did-method-key issue #35.
 
 ### 15.2 Informative references
 
 - **[RFC6979]** Pornin, T., "Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA)", RFC 6979, August 2013.
+- **[NIST-SP-800-63B]** Grassi, P. A., et al., "Digital Identity Guidelines: Authentication and Lifecycle Management", NIST Special Publication 800-63B.
+- **[Sudhodanan-Paverd-2022]** Sudhodanan, A. and A. Paverd, "Pre-hijacked accounts: An Empirical Study of Security Failures in User Account Creation on the Web", USENIX Security 2022.
 - Microsoft Entra Agent ID overview, Microsoft Learn.
 - "Agent2Agent (A2A) Protocol", Linux Foundation / Google.
 - "FIDO Agent Payments Protocol", FIDO Alliance.
 - "x402: HTTP Payment Required, Internet-Native Payments", Coinbase / x402 Foundation.
 - "Verifiable Intent", Mastercard / Google.
+- "OAuth 2.0 Extension: On-Behalf-Of User Authorization for AI Agents", `draft-oauth-ai-agents-on-behalf-of-user`, IETF.
 
 ---
 
@@ -726,10 +834,10 @@ This specification uses the `did:key` method [W3C-DID-KEY]. No new DID method is
 ```
                           signup
                 ∅  ────────────────────►  UNCLAIMED  ─── ttl expires ───►  EXPIRED
-                                            ▲   │
-                       invitation           │   │ inviteOwner(email)
-                       expires              │   ▼
-                                            └── INVITED
+                                            ▲   │                              ▲
+                       invitation           │   │ inviteOwner(email)            │
+                       expires              │   ▼                               │
+                                            └── INVITED ─── ttl expires ────────┘
                                                   │
                                                   │ human authenticates
                                                   ▼
@@ -742,9 +850,10 @@ Allowed transitions:
 |---|---|---|
 | ∅ | `UNCLAIMED` | signup (implicit or explicit) |
 | `UNCLAIMED` | `INVITED` | owner invitation |
-| `UNCLAIMED` | `EXPIRED` | TTL expiry |
+| `UNCLAIMED` | `EXPIRED` | unclaimed TTL expiry |
 | `INVITED` | `CLAIMED` | claim completion (human authenticates) |
-| `INVITED` | `UNCLAIMED` | invitation expiry |
+| `INVITED` | `UNCLAIMED` | invitation TTL expiry, no replacement issued |
+| `INVITED` | `EXPIRED` | unclaimed TTL expiry while an invitation is pending |
 | `CLAIMED` | `ARCHIVED` | owner-initiated delete |
 
 Forbidden transitions: any transition not listed above MUST NOT be permitted by a conforming service.
@@ -776,7 +885,7 @@ Content-Type: application/json
     "key_rotation": "/afauth/v1/accounts/me/keys/rotate"
   },
   "signature_algorithms": ["ed25519"],
-  "features": ["two_step_invite", "key_rotation"],
+  "features": ["key_rotation"],
   "billing": { "unclaimed_mode": "free" }
 }
 ```
@@ -788,10 +897,9 @@ POST /api/things HTTP/1.1
 Host: api.example.com
 Content-Type: application/json
 Content-Digest: sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
-AFAuth-Account: did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW
-Signature-Input: sig1=("@method" "@target-uri" "@authority" \
-                       "content-digest" "afauth-account");\
-                 created=1715000000;nonce="9f8b3a7c1d2e4f56";\
+Signature-Input: sig1=("@method" "@target-uri" "content-digest");\
+                 created=1715000000;expires=1715000060;\
+                 nonce="9f8b3a7c1d2e4f56";\
                  keyid="did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW";\
                  alg="ed25519"
 Signature: sig1=:0123abcde...:
@@ -863,13 +971,13 @@ Content-Type: application/json
 HTTP/1.1 202 Accepted
 
 {
-  "rotation_id": "rot_01h...",
-  "state": "PENDING_OWNER_APPROVAL",
-  "expires_at": "2026-05-25T12:00:00Z"
+  "rotation_id":                 "rot_01h...",
+  "owner_confirmation_required": true,
+  "expires_at":                  "2026-05-25T12:00:00Z"
 }
 ```
 
-The service emails Alice a confirmation link. Alice clicks the link and completes owner-session authentication. The service then commits the rotation; subsequent requests must be signed by the new key.
+The rotation is staged but not committed. The service emails Alice a confirmation link. Alice clicks the link and completes owner-session authentication. The service then commits the rotation; subsequent requests must be signed by the new key. The account state remains `CLAIMED` throughout the rotation flow.
 
 ---
 
