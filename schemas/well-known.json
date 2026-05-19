@@ -40,6 +40,15 @@
         "enum": ["attestation", "key_rotation"]
       }
     },
+    "recipient_types": {
+      "type": "array",
+      "description": "Recipient types the service accepts on the owner-invitation endpoint (§7.2, §7.7). Absent means email-only.",
+      "items": {
+        "type": "string",
+        "enum": ["email", "phone", "oidc", "did"]
+      },
+      "minItems": 1
+    },
     "limits": {
       "type": "object",
       "properties": {

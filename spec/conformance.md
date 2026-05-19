@@ -20,12 +20,13 @@ A conforming service MUST:
 
 1. **Discovery.** Serve a valid `/.well-known/afauth` document per the schema, including all `required` endpoints (`accounts`, `owner_invitation`, `claim_page`, `claim_completion`).
 2. **Signature verification.** Accept the §5.2 covered components and parameters; reject requests with extra or missing components; honour `created` and `expires`; maintain a `(keyid, nonce)` replay set covering at least `expires - created + skew_tolerance`.
-3. **State machine.** Implement all and only the transitions in Appendix A. In particular, transition `UNCLAIMED → INVITED → CLAIMED` only via the §7 flow; never bind an owner whose authenticated identity does not match `pending_email` (§7.4).
+3. **State machine.** Implement all and only the transitions in Appendix A. In particular, transition `UNCLAIMED → INVITED → CLAIMED` only via the §7 flow; never bind an owner whose authenticated identity does not satisfy the match relation against `pending_recipient` for its registered type (§7.4, §7.7).
 4. **Two-step verify (§7.1).** Reject any flow in which the agent's signature alone binds ownership.
 5. **Owner-binding floor (§7.5).** Reject agent-signed owner-binding operations post-claim with `403 Forbidden` and `owner_binding_blocked`.
 6. **Invitation atomicity (§7.3).** At most one pending invitation per account at any time; atomic replacement; invalidated tokens MUST fail with `410 Gone`.
 7. **`attested_only` honouring (§9, §6.3).** Services declaring `unclaimed_mode = "attested_only"` MUST reject implicit signup lacking attestation with `attestation_required`, without creating the account.
 8. **Error codes (§11).** Use the reserved codes for the conditions they describe.
+9. **Recipient types (§7.7).** Accept at minimum the `email` recipient type. Declare any additional supported types in `recipient_types` of the discovery doc. Reject unsupported types in invitation requests with `400 Bad Request` and `unsupported_recipient_type`.
 
 ## Agent conformance (planned probes)
 

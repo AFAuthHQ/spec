@@ -207,6 +207,7 @@ A discovery response:
   },
   "signature_algorithms": ["ed25519"],
   "features": ["attestation", "key_rotation"],
+  "recipient_types": ["email", "oidc"],
   "limits": {
     "unclaimed_ttl_seconds":         2592000,
     "unclaimed_rate_limit_per_hour": 100
@@ -232,12 +233,13 @@ The full JSON Schema is provided alongside this specification at [`../schemas/we
 ### 4.4 Optional fields
 
 - `features` (array of strings): Optional features the service supports. Defined values: `"attestation"`, `"key_rotation"`. Absent features MUST NOT be assumed supported. Two-step invite is normatively required for v0.1 conformance (§7.1) and is not an advertisable feature.
+- `recipient_types` (array of strings): Recipient types the service accepts on the owner-invitation endpoint (§7.2, §7.7). Defined values for v0.1 are `"email"`, `"phone"`, `"oidc"`, and `"did"`. Conforming services MUST accept `"email"` and SHOULD include it in the declared list. If `recipient_types` is absent, agents MUST assume `["email"]`.
 - `limits` (object): Service-declared limits. Defined members: `unclaimed_ttl_seconds`, `unclaimed_rate_limit_per_hour`.
 - `billing` (object): Pre-claim billing declaration. See Section 9.
 
 ### 4.5 Discovery procedure
 
-Before signup, agents SHOULD fetch and cache the discovery document. Agents MUST honor the `signature_algorithms` advertised; MUST honor the `billing.unclaimed_mode`; and SHOULD respect the rate-limit hints in `limits`.
+Before signup, agents SHOULD fetch and cache the discovery document. Agents MUST honor the `signature_algorithms` advertised; MUST honor the `billing.unclaimed_mode`; SHOULD respect the rate-limit hints in `limits`; and MUST choose a recipient type from `recipient_types` when invoking the owner-invitation endpoint (§7.2).
 
 ---
 
@@ -297,7 +299,7 @@ Signature-Input: sig1=("@method" "@target-uri" "content-digest");\
                  alg="ed25519"
 Signature: sig1=:0123abcde...:
 
-{"email":"alice@example.com"}
+{"recipient":{"type":"email","value":"alice@example.com"}}
 ```
 
 ### 5.5 Verification procedure
@@ -408,13 +410,20 @@ When `state` is `CLAIMED`, the `owner` field MUST be populated:
 
 ```json
 "owner": {
-  "email":      "alice@example.com",
-  "user_id":    "usr_01h...",
-  "claimed_at": "2026-05-18T13:42:00Z"
+  "identity": {
+    "type":  "email",
+    "value": "alice@example.com"
+  },
+  "user_id":      "usr_01h...",
+  "claimed_at":   "2026-05-18T13:42:00Z"
 }
 ```
 
-When `state` is `INVITED`, the `owner` field MUST remain `null`. Services MUST NOT expose the pending invitation email through agent-signed responses; see Section 13.2.
+`owner.identity` is the normalized recipient that was verified at claim time (see §7.4 and §7.7). Its `type` and `value` shape are determined by the recipient-type registry (§7.7); for `email`, the value is the canonical case-insensitive mailbox; for `oidc`, the value is the issuer URL concatenated with the verified subject; for `did`, the value is the canonical DID.
+
+Services MAY include additional informational fields in `owner` (for example `display_email` derived from a verified `oidc` recipient) for client convenience; such fields are service-defined and not normative.
+
+When `state` is `INVITED`, the `owner` field MUST remain `null`. Services MUST NOT expose the pending recipient through agent-signed responses; see Section 13.2.
 
 ---
 
@@ -438,14 +447,18 @@ Content-Type: application/json
 [ signed per Section 5 ]
 
 {
-  "email":        "alice@example.com",
+  "recipient": {
+    "type":  "email",
+    "value": "alice@example.com"
+  },
   "redirect_url": "https://yourapp.com/welcome"
 }
 ```
 
 Field semantics:
 
-- `email` (string, required): The email address to invite. MUST be a syntactically valid mailbox per [RFC5321].
+- `recipient` (object, required): The identity being invited to claim the account. The object MUST contain a `type` field naming a recipient type registered in §7.7, and the type-specific fields required for that type (typically `value`). The service MUST reject the request with `400 Bad Request` and error code `unsupported_recipient_type` if `type` is not in the service's declared `recipient_types` (§4.4).
+- `email` (string, optional, backward-compat): A bare `email` field at the top level of the request body MUST be accepted as a shorthand for `"recipient": { "type": "email", "value": "<value>" }`. New agent implementations SHOULD use the typed form. If both `email` and `recipient` are present, the request MUST be rejected with `400 Bad Request`.
 - `redirect_url` (string, optional): URL to redirect to after successful claim. Services MUST validate it against an allow-list of service-controlled hosts and MUST NOT honour redirects to hosts outside that list. An unvalidated redirect parameter is a well-known open-redirect class of vulnerability and is rejected from the protocol's wire surface, not just discouraged.
 
 Successful response:
@@ -461,9 +474,11 @@ Content-Type: application/json
 }
 ```
 
-The service MUST send a magic-link email to the invited address. The magic link MUST contain a single-use, unguessable token bound to the invitation. The service MUST transition state to `INVITED` immediately; `pending_email` MUST be stored separately from any committed `owner_email` field.
+On accepting the invitation, the service MUST initiate a verification ceremony appropriate to the recipient type — typically a magic-link email for `email`, an SMS or voice OTP for `phone`, an OIDC authorization-code flow for `oidc`, a challenge-response signature for `did`. The form of the ceremony is service-defined; §7.7 specifies only the *match relation* the ceremony must establish. Any token, code, or challenge issued during the ceremony MUST be single-use and bound to the invitation.
 
-If the invitation expires without a successful claim, the service MUST transition the account back to `UNCLAIMED` and discard the pending email.
+The service MUST transition state to `INVITED` immediately upon issuing the invitation. The staged recipient MUST be stored as `pending_recipient`, distinct from any committed `owner.identity` field, so that no agent-signed response exposes the pending value before claim commits (see §13.2).
+
+If the invitation expires without a successful claim, the service MUST transition the account back to `UNCLAIMED` and discard the pending recipient.
 
 ### 7.3 Invitation lifetime and atomicity
 
@@ -495,18 +510,21 @@ Response on success:
   "account_did": "did:key:z6Mk...",
   "state":       "CLAIMED",
   "owner": {
-    "email":      "alice@example.com",
+    "identity": {
+      "type":  "email",
+      "value": "alice@example.com"
+    },
     "user_id":    "usr_01h...",
     "claimed_at": "2026-05-18T13:42:00Z"
   }
 }
 ```
 
-Before the binding commits, the service MUST verify that the human's authenticated identity matches `pending_email`. The matching policy is service-defined — exact case-insensitive match per [RFC5321] §2.4 is sufficient for most services; services that accept federated identity (OIDC, SAML) MAY match against any email provably controlled by the authenticated identity. The service MUST NOT bind an owner whose authenticated identity cannot be matched to the invited address; in that case the service MUST reject the claim with `403 Forbidden` and error code `owner_authentication_required`, and the invitation MUST remain pending until the TTL expires or a matching authentication is presented.
+Before the binding commits, the service MUST verify that the human's authenticated identity satisfies the **match relation** registered for the recipient's type (§7.7) against `pending_recipient`. For example: for the `email` type, the match relation is case-insensitive equality per [RFC5321] §2.4; for `oidc`, it is exact issuer + subject equality; for `did`, it is canonical DID equality combined with a verified signature over a freshness-bound challenge. The service MUST NOT bind an owner whose authenticated identity does not satisfy the match relation; in that case the service MUST reject the claim with `403 Forbidden` and error code `owner_authentication_required`, and the invitation MUST remain pending until the TTL expires or a matching authentication is presented.
 
-Only after the authenticated identity has been verified to match `pending_email` does the account transition to `CLAIMED`. The service MUST:
+Only after the authenticated identity has been verified to match `pending_recipient` does the account transition to `CLAIMED`. The service MUST:
 
-- Persist `owner_email = pending_email` and clear the pending field.
+- Persist `owner.identity` as the normalized form of `pending_recipient`, and clear the pending field.
 - Issue any post-claim session credentials (cookie, JWT, etc.) per the service's authentication system.
 - OPTIONALLY fire a webhook to inform the service backend of the claim event.
 
@@ -527,6 +545,59 @@ Beyond this single rule, the protocol takes no position on what an agent may do 
 ### 7.6 Agent-driven re-invitation
 
 In `CLAIMED` state, the agent MAY initiate a new invitation only if the existing owner explicitly authorises it (e.g., via an owner-session-authenticated endpoint defined by the service). This specification does not standardise the owner-side workflow; services MAY define their own.
+
+### 7.7 Recipient types registry
+
+Each `recipient` carries a `type` identifier drawn from this registry. The registry defines, per type, the required value shape, the verification ceremony the service is expected to run, and the **match relation** that establishes whether an authenticated identity satisfies a given recipient.
+
+This specification reserves the following recipient types for v0.1. Conforming services MUST accept `email`; support for any other type is optional and MUST be declared in `recipient_types` (§4.4) before agents can use it.
+
+#### 7.7.1 `email`
+
+- **Value shape:** A syntactically valid mailbox per [RFC5321].
+- **Verification ceremony:** Service-defined. The canonical pattern is a single-use magic link delivered to the mailbox; equivalent ceremonies include OIDC sign-in to the email provider and a pre-existing email-bound passkey.
+- **Match relation:** Case-insensitive equality of the local-part and domain after Unicode NFKC normalization per [RFC5321] §2.4. A service that accepts federated identity MAY match against any email provably controlled by the authenticated identity (e.g., a verified-email claim in an OIDC token).
+
+```json
+{ "type": "email", "value": "alice@example.com" }
+```
+
+#### 7.7.2 `phone`
+
+- **Value shape:** An E.164 string (e.g., `+14155550173`), without separators or extension.
+- **Verification ceremony:** Service-defined. Typical patterns include SMS OTP, voice OTP, and carrier-bound passkey.
+- **Match relation:** Exact byte equality after E.164 normalization.
+
+```json
+{ "type": "phone", "value": "+14155550173" }
+```
+
+#### 7.7.3 `oidc`
+
+- **Value shape:** An object with two fields: `issuer` (the OIDC Issuer URL, exactly as it appears in the discovery document of the IdP) and `sub` (the subject identifier within that issuer).
+- **Verification ceremony:** Service-defined. The canonical pattern is an OIDC Authorization Code flow with PKCE that yields an ID Token whose `iss` and `sub` match the recipient.
+- **Match relation:** Exact equality of `issuer` and `sub`.
+
+```json
+{
+  "type":  "oidc",
+  "value": { "issuer": "https://accounts.google.com", "sub": "103948572345" }
+}
+```
+
+#### 7.7.4 `did`
+
+- **Value shape:** A DID URL identifying the human's verification method. The DID method MUST be one the service accepts.
+- **Verification ceremony:** A challenge-response in which the service issues a freshness-bound, account-specific challenge nonce, the human signs it with the private key corresponding to the DID's verification method, and the service verifies the signature. The exact framing (PAR, OIDC4VC, OpenID4VP, or a service-native ceremony) is service-defined.
+- **Match relation:** Canonical DID equality combined with a verified signature over the challenge issued for this invitation.
+
+```json
+{ "type": "did", "value": "did:key:z6MkrJVnaZkeFzdQyMZu1cF5cgqU3M..." }
+```
+
+#### 7.7.5 Other types
+
+Future versions of this specification, or AFAPs that update this registry, MAY add additional types (for example `siwe` for chain-bound addresses, `webauthn` for credential-id-bound recipients, `domain` for DNS controllers, or `verifiable_credential` for predicate-based recipients). Services MUST NOT use unregistered type identifiers on the wire; service-specific extensions SHOULD prefix the type name with a vendor-specific namespace (e.g., `x-acme:internal-user`).
 
 ---
 
@@ -677,9 +748,9 @@ Field semantics:
 
 Conforming services MUST use these codes when the corresponding condition applies:
 
-`invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `owner_binding_blocked`, `account_expired`, `rate_limit_exceeded`, `malformed_request`.
+`invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `owner_binding_blocked`, `account_expired`, `rate_limit_exceeded`, `malformed_request`, `unsupported_recipient_type`.
 
-`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general.
+`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general. `unsupported_recipient_type` is returned with `400 Bad Request` when an invitation request specifies a recipient `type` not present in the service's declared `recipient_types` (§4.4, §7.2).
 
 Services MAY define additional error codes for service-specific conditions, but SHOULD prefix them with a service-specific namespace (e.g., `example_quota_exceeded`).
 
@@ -751,9 +822,9 @@ Future versions of this specification may require the discovery document itself 
 
 A persistent `did:key` is a strong pseudonymous identifier. While it does not encode personal information, it is durable and can be correlated across services if shared. Agents operating on behalf of users SHOULD consider whether to derive per-service keys (Section 3.3).
 
-### 13.2 Owner email
+### 13.2 Owner identity
 
-The `owner_email` field is private user data. Services MUST NOT expose `owner_email` (or its pre-claim equivalent `pending_email`) in any unauthenticated response, including agent-signed responses against `UNCLAIMED` or `INVITED` accounts. Agent-signed `GET /afauth/v1/accounts/me` MUST return only `state == "INVITED"` while a pending email exists; it MUST NOT return the pending address itself.
+The `owner.identity` field — and its pre-claim equivalent `pending_recipient` — is private user data. Services MUST NOT expose either value (regardless of recipient type) in any unauthenticated response, including agent-signed responses against `UNCLAIMED` or `INVITED` accounts. Agent-signed `GET /afauth/v1/accounts/me` MUST return only `state == "INVITED"` while a `pending_recipient` exists; it MUST NOT return the pending value itself. Any derived informational fields (such as a service-added `display_email` on a verified `oidc` recipient) MUST be treated with the same confidentiality as the identity itself.
 
 ### 13.3 Audit log access
 
@@ -914,9 +985,9 @@ Content-Type: application/json
 
 The account is now `UNCLAIMED` and discoverable via `GET /afauth/v1/accounts/me`.
 
-### B.2 Owner invitation and claim
+### B.2 Owner invitation and claim (email recipient)
 
-The agent invites a human owner:
+The agent invites a human owner by email:
 
 ```http
 POST /afauth/v1/accounts/me/owner-invitation HTTP/1.1
@@ -924,14 +995,14 @@ Host: api.example.com
 Content-Type: application/json
 [ headers per B.1 with appropriate digest and signature ]
 
-{"email":"alice@example.com"}
+{"recipient":{"type":"email","value":"alice@example.com"}}
 
 HTTP/1.1 202 Accepted
 
 {
   "invitation_id": "inv_01h...",
-  "expires_at": "2026-05-25T12:00:00Z",
-  "state": "INVITED"
+  "expires_at":    "2026-05-25T12:00:00Z",
+  "state":         "INVITED"
 }
 ```
 
@@ -947,16 +1018,61 @@ HTTP/1.1 200 OK
 
 {
   "account_did": "did:key:z6MkpTHR...",
-  "state": "CLAIMED",
+  "state":       "CLAIMED",
   "owner": {
-    "email": "alice@example.com",
-    "user_id": "usr_01h...",
+    "identity":   { "type": "email", "value": "alice@example.com" },
+    "user_id":    "usr_01h...",
     "claimed_at": "2026-05-18T13:42:00Z"
   }
 }
 ```
 
 The agent can continue signing requests with the same key; the account is now in `CLAIMED` state with Alice as the owner.
+
+### B.2.1 Owner invitation and claim (OIDC recipient)
+
+A service that declares `"recipient_types": ["email", "oidc"]` can be invited with a federated identity:
+
+```http
+POST /afauth/v1/accounts/me/owner-invitation HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+[ signed per Section 5 ]
+
+{
+  "recipient": {
+    "type":  "oidc",
+    "value": { "issuer": "https://accounts.google.com", "sub": "103948572345" }
+  }
+}
+
+HTTP/1.1 202 Accepted
+
+{
+  "invitation_id": "inv_01h...",
+  "expires_at":    "2026-05-19T20:00:00Z",
+  "state":         "INVITED"
+}
+```
+
+The service's claim page initiates an OIDC Authorization Code flow with Google; on return, the service verifies that the ID Token's `iss` is `https://accounts.google.com` and its `sub` is `103948572345`. If both match, the binding commits:
+
+```json
+{
+  "account_did": "did:key:z6MkpTHR...",
+  "state":       "CLAIMED",
+  "owner": {
+    "identity": {
+      "type":  "oidc",
+      "value": { "issuer": "https://accounts.google.com", "sub": "103948572345" }
+    },
+    "user_id":    "usr_01h...",
+    "claimed_at": "2026-05-19T08:14:00Z"
+  }
+}
+```
+
+The agent never delivered an email; the entire claim ceremony was a federated sign-in.
 
 ### B.3 Post-claim agent-initiated key rotation
 
