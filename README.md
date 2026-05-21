@@ -11,10 +11,16 @@ This repository contains the specification for **AFAuth** — an open protocol t
 ## Layout
 
 - [`spec/core.md`](spec/core.md) — the protocol specification
-- [`spec/conformance.md`](spec/conformance.md) — conformance criteria (stub; full test suite planned)
+- [`spec/conformance.md`](spec/conformance.md) — conformance criteria for agent and service roles
 - [`schemas/well-known.json`](schemas/well-known.json) — JSON Schema for the `/.well-known/afauth` discovery document
-- [`vectors/`](vectors/) — test vectors covering canonical signature inputs, reference signatures, recipient normalisation, and error envelopes (see Appendix C of the spec)
-- [`harness/`](harness/) — minimal conformance harness that runs the test vectors against an implementation
+- [`vectors/`](vectors/) — Appendix C test vectors:
+    - [`signatures/`](vectors/signatures/) (§C.1, §C.2 — canonical input + reference signatures)
+    - [`discovery/`](vectors/discovery/) (§C.3 — well-formed / forward-compat / malformed discovery docs)
+    - [`recipients/`](vectors/recipients/) (§C.4 — per-type recipient normalisation)
+    - [`errors/`](vectors/errors/) (§C.5 — envelope shape per §11.3 code)
+    - [`replay-window/`](vectors/replay-window/) (§C.6 — expired / future-dated / replay / cross-keyid)
+- [`harness/`](harness/) — executable conformance harness that runs every committed vector
+- [`implementation/`](implementation/) — implementation scope, ADRs, and SDK API sketch (`sdk-v0.1.d.ts`) for the reference TypeScript SDK
 - [`proposals/`](proposals/README.md) — AFAuth Protocol Proposals (AFAPs)
 
 ## Reference implementations

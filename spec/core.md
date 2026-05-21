@@ -1103,7 +1103,7 @@ The rotation is staged but not committed. The service emails Alice a confirmatio
 
 ## Appendix C: Test Vectors
 
-**Status:** Required for v0.1 final. The vectors below are the minimum a v0.1 implementation MUST pass to claim conformance. Their absence today is the protocol's single highest-priority open work item; until they ship, conformance claims are interpretive.
+**Status:** Required for v0.1 final. The vectors below are the minimum a v0.1 implementation MUST pass to claim conformance. The full §C.1 through §C.6 corpus now ships under [`../vectors/`](../vectors/), and an executable harness at [`../harness/run.js`](../harness/run.js) verifies every committed vector against a reference verifier.
 
 A reference test-only Ed25519 keypair is published alongside this specification at [`../vectors/keypair.json`](../vectors/keypair.json). The keypair is for protocol testing only and MUST NOT be used in production. The associated `did:key` identifier is:
 

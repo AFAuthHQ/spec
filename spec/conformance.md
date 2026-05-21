@@ -1,6 +1,6 @@
 # AFAuth Conformance
 
-**Status:** Stub. A complete conformance test suite is planned before v0.1 final.
+**Status:** Working draft alongside `core.md`. The §C.1 through §C.6 test-vector corpus and the executable harness at [`../harness/run.js`](../harness/run.js) ship in this repository; an implementation that passes every committed vector through its own verifier may claim v0.1 conformance for its declared role.
 
 This document describes what an AFAuth implementation must support to call itself "AFAuth-conformant." It is the authoritative reference for that claim; the protocol specification ([`core.md`](core.md)) provides the underlying normative requirements.
 
@@ -42,6 +42,14 @@ A conforming agent MUST:
 
 This document tracks the protocol version it describes. Future revisions will use additive probes for non-breaking protocol changes and a new major version for breaking changes.
 
-## Status
+## Test vectors and harness
 
-A test vector suite (Appendix C of `core.md`) and an executable conformance harness are open work items. Contributions welcome via the proposals process (see [`../proposals/`](../proposals/README.md)).
+The Appendix C corpus ships under [`../vectors/`](../vectors/):
+
+- **§C.1, §C.2** — [`vectors/signatures/`](../vectors/signatures/): canonical input + reference signatures.
+- **§C.3** — [`vectors/discovery/`](../vectors/discovery/): well-formed, forward-compatible, and malformed discovery documents.
+- **§C.4** — [`vectors/recipients/`](../vectors/recipients/): per-type normalisation rules with canonical forms.
+- **§C.5** — [`vectors/errors/`](../vectors/errors/): one envelope fixture per §11.3 reserved code.
+- **§C.6** — [`vectors/replay-window/`](../vectors/replay-window/): expired, future-dated, replay-invariant, and cross-keyid sequences.
+
+The executable harness at [`../harness/run.js`](../harness/run.js) runs every fixture against a reference verifier and exits non-zero on any failure. It exports its primitives (`buildCanonicalInput`, `verifySignature`, `checkDiscoveryDocument`, `normaliseRecipient`, …) so independent implementations can reuse them. Contributions of additional vectors are welcome via the proposals process (see [`../proposals/`](../proposals/README.md)).
