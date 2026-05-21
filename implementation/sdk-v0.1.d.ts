@@ -87,7 +87,9 @@ declare module '@afauth/core' {
     | 'attestation_required' | 'invitation_expired' | 'invitation_not_found'
     | 'already_claimed' | 'not_claimed' | 'owner_authentication_required'
     | 'owner_binding_blocked' | 'account_expired' | 'rate_limit_exceeded'
-    | 'malformed_request' | 'unsupported_recipient_type';
+    | 'malformed_request' | 'unsupported_recipient_type'
+    // Reserved by AFAP-0002 (draft).
+    | 'owner_session_too_stale';
 
   export class AFAuthError extends Error {
     readonly code: AFAuthErrorCode;
@@ -475,6 +477,15 @@ declare module '@afauth/server' {
   export interface OwnerSession {
     authenticated: Recipient;
     userId: string;
+    /**
+     * ISO-8601 timestamp of the most recent authentication event
+     * this session evidences. Optional for backward compatibility.
+     * Required by AFAP-0002's §7.5 freshness floor — handlers
+     * gating owner-binding operations on freshness MUST reject
+     * sessions whose authenticatedAt is older than the configured
+     * window with `owner_session_too_stale` (403).
+     */
+    authenticatedAt?: string;
   }
 
   export class Server {
