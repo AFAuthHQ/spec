@@ -566,7 +566,7 @@ This specification reserves the following recipient types for v0.1. Conforming s
 
 #### 7.7.2 `phone`
 
-- **Value shape:** An E.164 string (e.g., `+14155550173`), without separators or extension.
+- **Value shape:** An E.164 string (e.g., `+14155550173`), without separators or extension. Implementations MUST reject values containing any character other than `+` and the digits `0`–`9`, and MUST reject E.164 extension syntax (`;ext=42`, `,42`, `x42`, and equivalents).
 - **Verification ceremony:** Service-defined. Typical patterns include SMS OTP, voice OTP, and carrier-bound passkey.
 - **Match relation:** Exact byte equality after E.164 normalization.
 
@@ -576,9 +576,9 @@ This specification reserves the following recipient types for v0.1. Conforming s
 
 #### 7.7.3 `oidc`
 
-- **Value shape:** An object with two fields: `issuer` (the OIDC Issuer URL, exactly as it appears in the discovery document of the IdP) and `sub` (the subject identifier within that issuer).
+- **Value shape:** An object with two fields: `issuer` (the OIDC Issuer URL, exactly as it appears in the IdP's discovery document) and `sub` (the subject identifier within that issuer). The `issuer` value is treated as opaque: implementations MUST NOT normalise it (e.g., lowercase the scheme, fold percent-encoding, or add or strip a trailing slash) — the IdP-published form is canonical per [OIDC-Discovery] §3. Implementations MUST reject `issuer` values containing a fragment or query component.
 - **Verification ceremony:** Service-defined. The canonical pattern is an OIDC Authorization Code flow with PKCE that yields an ID Token whose `iss` and `sub` match the recipient.
-- **Match relation:** Exact equality of `issuer` and `sub`.
+- **Match relation:** Byte-exact equality of `issuer` and `sub`.
 
 ```json
 {
@@ -589,7 +589,8 @@ This specification reserves the following recipient types for v0.1. Conforming s
 
 #### 7.7.4 `did`
 
-- **Value shape:** A DID URL identifying the human's verification method. The DID method MUST be one the service accepts.
+- **Value shape:** A bare DID identifying the human's verification method. The value MUST NOT include DID URL components (no path, query, or fragment). The DID method MUST be one the service accepts.
+- **Canonical form:** Per the method's specification — for `did:key`, the multibase encoding canonical form defined in §3.1.1; for `did:web`, the lowercase host with the method-derived path syntax per [W3C-DID-WEB]. Implementations MUST reject non-canonical equivalents (e.g., `did:web:Example.COM` for `did:web:example.com`).
 - **Verification ceremony:** A challenge-response in which the service issues a freshness-bound, account-specific challenge nonce, the human signs it with the private key corresponding to the DID's verification method, and the service verifies the signature. The exact framing (PAR, OIDC4VC, OpenID4VP, or a service-native ceremony) is service-defined.
 - **Match relation:** Canonical DID equality combined with a verified signature over the challenge issued for this invitation.
 
@@ -883,6 +884,7 @@ This specification uses the `did:key` method [W3C-DID-KEY]. No new DID method is
 - **[RFC9110]** Fielding, R., Ed., Nottingham, M., Ed., and J. Reschke, Ed., "HTTP Semantics", STD 97, RFC 9110, June 2022.
 - **[RFC9421]** Backman, A., Ed., Richer, J., Ed., and M. Sporny, "HTTP Message Signatures", RFC 9421, February 2024.
 - **[RFC9530]** Polli, R. and L. Pardue, "Digest Fields", RFC 9530, February 2024.
+- **[OIDC-Discovery]** Sakimura, N., Bradley, J., Jones, M. B., and E. Jay, "OpenID Connect Discovery 1.0", OpenID Foundation, November 2014.
 - **[W3C-DID-CORE]** Sporny, M., Longley, D., Sabadello, M., Reed, D., Steele, O., and C. Allen, "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, July 2022.
 - **[W3C-DID-KEY]** Longley, D., and D. Zagidulin, "The did:key Method v0.7", W3C Community Group Report.
 - **[W3C-DID-WEB]** Steele, O., Sporny, M., et al., "did:web Method Specification", W3C Credentials Community Group.
