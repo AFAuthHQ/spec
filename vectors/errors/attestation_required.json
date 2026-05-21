@@ -1,0 +1,13 @@
+{
+  "name": "attestation_required",
+  "description": "The service requires a valid attestation for this operation but none was supplied.",
+  "section": "§10, §11.3",
+  "code": "attestation_required",
+  "http_status": 401,
+  "envelope": {
+    "error": {
+      "code": "attestation_required",
+      "message": "Attestation required"
+    }
+  }
+}

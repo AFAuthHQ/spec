@@ -1,0 +1,13 @@
+{
+  "name": "replayed_nonce",
+  "description": "A (keyid, nonce) pair has been seen before within the signature's validity window.",
+  "section": "§5.6, §11.3",
+  "code": "replayed_nonce",
+  "http_status": 401,
+  "envelope": {
+    "error": {
+      "code": "replayed_nonce",
+      "message": "Nonce has been seen before"
+    }
+  }
+}

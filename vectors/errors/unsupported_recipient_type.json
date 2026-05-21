@@ -1,0 +1,13 @@
+{
+  "name": "unsupported_recipient_type",
+  "description": "The owner-invitation request specified a recipient `type` that the service did not declare in its discovery `recipient_types`.",
+  "section": "§4.4, §7.2, §11.3",
+  "code": "unsupported_recipient_type",
+  "http_status": 400,
+  "envelope": {
+    "error": {
+      "code": "unsupported_recipient_type",
+      "message": "Unsupported recipient type"
+    }
+  }
+}

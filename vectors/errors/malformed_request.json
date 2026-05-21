@@ -1,0 +1,13 @@
+{
+  "name": "malformed_request",
+  "description": "The request body, headers, or URL are not parseable as a v0.1 AFAuth request (invalid JSON, missing required field, invalid DID syntax, unsupported HTTP method, etc.).",
+  "section": "§11.2, §11.3",
+  "code": "malformed_request",
+  "http_status": 400,
+  "envelope": {
+    "error": {
+      "code": "malformed_request",
+      "message": "Malformed request"
+    }
+  }
+}

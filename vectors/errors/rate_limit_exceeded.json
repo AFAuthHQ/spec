@@ -1,0 +1,13 @@
+{
+  "name": "rate_limit_exceeded",
+  "description": "The agent has exceeded the service's declared rate limit (§4.4 limits.unclaimed_rate_limit_per_hour or service-defined).",
+  "section": "§11.2, §11.3",
+  "code": "rate_limit_exceeded",
+  "http_status": 429,
+  "envelope": {
+    "error": {
+      "code": "rate_limit_exceeded",
+      "message": "Rate limit exceeded"
+    }
+  }
+}

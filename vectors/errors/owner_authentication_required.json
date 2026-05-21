@@ -1,0 +1,13 @@
+{
+  "name": "owner_authentication_required",
+  "description": "The operation requires an owner-authenticated session and the supplied session does not satisfy §7.7 match relation (or is absent).",
+  "section": "§7.4, §7.5, §8.2, §11.3",
+  "code": "owner_authentication_required",
+  "http_status": 403,
+  "envelope": {
+    "error": {
+      "code": "owner_authentication_required",
+      "message": "Owner authentication required"
+    }
+  }
+}

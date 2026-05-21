@@ -32,6 +32,21 @@ const path = require('path');
 const crypto = require('crypto');
 
 const VECTORS_DIR = path.join(__dirname, '..', 'vectors', 'signatures');
+const ERRORS_DIR = path.join(__dirname, '..', 'vectors', 'errors');
+const REPLAY_DIR = path.join(__dirname, '..', 'vectors', 'replay-window');
+
+// §11.3 reserved codes.
+const RESERVED_ERROR_CODES = new Set([
+  'invalid_signature', 'expired_signature', 'replayed_nonce',
+  'unknown_account', 'revoked_key', 'invalid_attestation',
+  'attestation_required', 'invitation_expired', 'invitation_not_found',
+  'already_claimed', 'not_claimed', 'owner_authentication_required',
+  'owner_binding_blocked', 'account_expired', 'rate_limit_exceeded',
+  'malformed_request', 'unsupported_recipient_type',
+]);
+
+// §11.2 status codes.
+const ALLOWED_STATUSES = new Set([400, 401, 403, 404, 409, 410, 429, 503]);
 
 // ---------- did:key decoding ----------
 
@@ -167,6 +182,124 @@ function checkVector(vector) {
   return { ok: errors.length === 0, errors };
 }
 
+// ---------- C.5 error-envelope checks ----------
+
+function checkErrorVector(vector) {
+  const errors = [];
+  if (vector.name !== vector.code) {
+    errors.push(`name (${vector.name}) must equal code (${vector.code})`);
+  }
+  if (!RESERVED_ERROR_CODES.has(vector.code)) {
+    errors.push(`code "${vector.code}" is not in §11.3 reserved set`);
+  }
+  if (!ALLOWED_STATUSES.has(vector.http_status)) {
+    errors.push(`http_status ${vector.http_status} not in §11.2 set`);
+  }
+  if (!vector.envelope || typeof vector.envelope !== 'object') {
+    errors.push('envelope must be an object');
+  } else if (!vector.envelope.error || typeof vector.envelope.error !== 'object') {
+    errors.push('envelope.error must be an object');
+  } else {
+    const e = vector.envelope.error;
+    if (e.code !== vector.code) errors.push(`envelope.error.code (${e.code}) must equal code (${vector.code})`);
+    if (typeof e.message !== 'string') errors.push('envelope.error.message must be a string');
+    const allowed = new Set(['code', 'message', 'details']);
+    for (const k of Object.keys(e)) {
+      if (!allowed.has(k)) errors.push(`envelope.error has unexpected key "${k}" (allowed: code, message, details)`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+// ---------- C.6 replay-window checks ----------
+
+class HarnessNonceStore {
+  constructor() { this.seenSet = new Map(); }
+  seen(keyid, nonce) {
+    const key = `${keyid}\x00${nonce}`;
+    if (this.seenSet.has(key)) return false;
+    this.seenSet.set(key, true);
+    return true;
+  }
+}
+
+// Self-contained verifier mirroring the §5.5/§5.6 procedure.
+// Returns { ok: true } on accept; { ok: false, code, status } on reject.
+// `now` is unix seconds; `clockSkewSeconds` defaults to 5.
+function verifyForReplayCheck(vector, opts) {
+  const { now, nonceStore, clockSkewSeconds = 5, maxSignatureLifetimeSeconds = 300 } = opts;
+  const p = vector.signature_params;
+
+  if (!Number.isInteger(p.created) || !Number.isInteger(p.expires)) {
+    return { ok: false, code: 'invalid_signature', status: 401, reason: 'created/expires must be integers' };
+  }
+  if (p.expires <= p.created) {
+    return { ok: false, code: 'invalid_signature', status: 401, reason: 'expires must be > created' };
+  }
+  if (p.expires - p.created > maxSignatureLifetimeSeconds) {
+    return { ok: false, code: 'invalid_signature', status: 401, reason: 'lifetime exceeds maximum' };
+  }
+  if (now < p.created - clockSkewSeconds) {
+    return { ok: false, code: 'invalid_signature', status: 401, reason: 'future-dated' };
+  }
+  if (now > p.expires + clockSkewSeconds) {
+    return { ok: false, code: 'expired_signature', status: 401, reason: 'expired' };
+  }
+
+  const sigOk = verifySignature(vector.canonical_signature_input, vector.signature_hex, vector.public_key_did);
+  if (!sigOk) {
+    return { ok: false, code: 'invalid_signature', status: 401, reason: 'signature did not verify' };
+  }
+
+  const fresh = nonceStore.seen(p.keyid, p.nonce);
+  if (!fresh) {
+    return { ok: false, code: 'replayed_nonce', status: 401, reason: 'nonce replayed' };
+  }
+
+  return { ok: true };
+}
+
+function checkReplayVector(vector) {
+  const errors = [];
+  const nonceStore = new HarnessNonceStore();
+  if (vector.extra_setup?.kind === 'prime_nonce_under_other_keyid') {
+    nonceStore.seen(vector.extra_setup.other_keyid, vector.signature_params.nonce);
+  }
+  const first = verifyForReplayCheck(vector, {
+    now: vector.verifier_now_unix_seconds,
+    nonceStore,
+  });
+  const expected = vector.expected_outcome;
+  if (expected.type === 'accept') {
+    if (!first.ok) {
+      errors.push(`expected accept, got reject (${first.code}: ${first.reason})`);
+    }
+    // Replay invariant: re-verify and expect replayed_nonce.
+    if (vector.replay_behaviour && first.ok) {
+      const second = verifyForReplayCheck(vector, {
+        now: vector.verifier_now_unix_seconds,
+        nonceStore,
+      });
+      if (second.ok) {
+        errors.push('second verification accepted; expected replayed_nonce');
+      } else if (second.code !== 'replayed_nonce') {
+        errors.push(`second verification rejected with ${second.code}; expected replayed_nonce`);
+      }
+    }
+  } else if (expected.type === 'reject') {
+    if (first.ok) {
+      errors.push(`expected reject ${expected.code}, got accept`);
+    } else if (first.code !== expected.code) {
+      errors.push(`expected code ${expected.code}, got ${first.code} (${first.reason})`);
+    } else if (first.status !== expected.status) {
+      errors.push(`expected status ${expected.status}, got ${first.status}`);
+    }
+  } else {
+    errors.push(`unknown expected_outcome.type: ${expected.type}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 // ---------- main ----------
 
 function loadVectors() {
@@ -180,35 +313,66 @@ function loadVectors() {
   });
 }
 
-function main() {
-  const requestedNames = process.argv.slice(2);
-  const all = loadVectors();
-  const targets = requestedNames.length === 0
-    ? all
-    : all.filter(v => requestedNames.includes(v.vector.name));
+function loadDir(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(f => f.endsWith('.json') && !f.startsWith('_'))
+    .sort()
+    .map(f => ({
+      file: f,
+      vector: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')),
+    }));
+}
 
-  if (requestedNames.length > 0 && targets.length !== requestedNames.length) {
-    const have = new Set(all.map(v => v.vector.name));
-    const missing = requestedNames.filter(n => !have.has(n));
-    console.error(`unknown vector(s): ${missing.join(', ')}`);
-    process.exit(2);
-  }
-
+function runSuite(label, vectors, checker) {
   let pass = 0, fail = 0;
-  for (const { file, vector } of targets) {
-    const result = checkVector(vector);
+  for (const { file, vector } of vectors) {
+    const result = checker(vector);
     if (result.ok) {
-      console.log(`PASS  ${vector.name}`);
+      console.log(`PASS  ${label}/${vector.name}`);
       pass++;
     } else {
-      console.log(`FAIL  ${vector.name}  (${file})`);
+      console.log(`FAIL  ${label}/${vector.name}  (${file})`);
       for (const e of result.errors) console.log(`      ${e}`);
       fail++;
     }
   }
+  return { pass, fail };
+}
+
+function main() {
+  const requestedNames = process.argv.slice(2);
+  const sigs = loadVectors();
+  const errs = loadDir(ERRORS_DIR);
+  const replays = loadDir(REPLAY_DIR);
+
+  if (requestedNames.length > 0) {
+    const all = [...sigs, ...errs, ...replays];
+    const have = new Set(all.map(v => v.vector.name));
+    const missing = requestedNames.filter(n => !have.has(n));
+    if (missing.length > 0) {
+      console.error(`unknown vector(s): ${missing.join(', ')}`);
+      process.exit(2);
+    }
+    const filter = (set) => set.filter(v => requestedNames.includes(v.vector.name));
+    const totals = [
+      runSuite('signatures',     filter(sigs),    checkVector),
+      runSuite('errors',         filter(errs),    checkErrorVector),
+      runSuite('replay-window',  filter(replays), checkReplayVector),
+    ].reduce((a, b) => ({ pass: a.pass + b.pass, fail: a.fail + b.fail }), { pass: 0, fail: 0 });
+    console.log(``);
+    console.log(`${totals.pass} passed, ${totals.fail} failed`);
+    process.exit(totals.fail > 0 ? 1 : 0);
+  }
+
+  const r1 = runSuite('signatures',    sigs,    checkVector);
+  const r2 = runSuite('errors',        errs,    checkErrorVector);
+  const r3 = runSuite('replay-window', replays, checkReplayVector);
+  const totals = { pass: r1.pass + r2.pass + r3.pass, fail: r1.fail + r2.fail + r3.fail };
+  const grandTotal = totals.pass + totals.fail;
   console.log(``);
-  console.log(`${pass} passed, ${fail} failed (of ${targets.length})`);
-  process.exit(fail > 0 ? 1 : 0);
+  console.log(`${totals.pass} passed, ${totals.fail} failed (of ${grandTotal})`);
+  process.exit(totals.fail > 0 ? 1 : 0);
 }
 
 if (require.main === module) main();
@@ -220,5 +384,13 @@ module.exports = {
   decodeDidKey,
   ed25519PublicKeyFromRaw,
   checkVector,
+  checkErrorVector,
+  checkReplayVector,
+  verifyForReplayCheck,
   loadVectors,
+  loadDir,
+  ERRORS_DIR,
+  REPLAY_DIR,
+  RESERVED_ERROR_CODES,
+  ALLOWED_STATUSES,
 };

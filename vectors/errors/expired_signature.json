@@ -1,0 +1,13 @@
+{
+  "name": "expired_signature",
+  "description": "The signature's `expires` parameter is before the verifier's current time minus the configured clock skew.",
+  "section": "§5.6, §11.3",
+  "code": "expired_signature",
+  "http_status": 401,
+  "envelope": {
+    "error": {
+      "code": "expired_signature",
+      "message": "Signature has expired"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "future-dated-signature",
+  "description": "Signature whose `created` parameter is significantly in the future relative to the verifier's `now` (well beyond the configured clockSkew). Verifier MUST reject with `invalid_signature` (§5.6, §11.3).",
+  "section": "C.6",
+  "request": {
+    "method": "GET",
+    "target_uri": "https://api.example.com/afauth/v1/accounts/me",
+    "body": null
+  },
+  "content_digest": null,
+  "covered_components": [
+    "@method",
+    "@target-uri"
+  ],
+  "signature_params": {
+    "created": 1716000000,
+    "expires": 1716000060,
+    "nonce": "b2c3d4e5f6071829",
+    "keyid": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "alg": "ed25519"
+  },
+  "canonical_signature_input": "\"@method\": GET\n\"@target-uri\": https://api.example.com/afauth/v1/accounts/me\n\"@signature-params\": (\"@method\" \"@target-uri\");created=1716000000;expires=1716000060;nonce=\"b2c3d4e5f6071829\";keyid=\"did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr\";alg=\"ed25519\"",
+  "signature_hex": "c95559299056dafa96d45de12a7b5a3d4cdaf8d89a74dba34b3e8bc49835bea019015c8d72baf5ab5a53a219db01c3750ffdfdc6b70904efc15bc1b3f5d37606",
+  "public_key_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+  "verifier_now_unix_seconds": 1715000000,
+  "expected_outcome": {
+    "type": "reject",
+    "code": "invalid_signature",
+    "status": 401
+  }
+}

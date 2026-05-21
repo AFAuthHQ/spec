@@ -1,0 +1,13 @@
+{
+  "name": "owner_binding_blocked",
+  "description": "An agent-signed request attempted an owner-binding operation post-claim. The agent key alone MUST NOT authorize such operations.",
+  "section": "§7.5, §11.3",
+  "code": "owner_binding_blocked",
+  "http_status": 403,
+  "envelope": {
+    "error": {
+      "code": "owner_binding_blocked",
+      "message": "Owner-binding operation blocked"
+    }
+  }
+}

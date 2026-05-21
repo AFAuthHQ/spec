@@ -1,0 +1,13 @@
+{
+  "name": "invitation_expired",
+  "description": "The pending invitation's TTL has elapsed, or the token was atomically replaced by a subsequent invitation per §7.3.",
+  "section": "§7.3, §11.3",
+  "code": "invitation_expired",
+  "http_status": 410,
+  "envelope": {
+    "error": {
+      "code": "invitation_expired",
+      "message": "Invitation has expired"
+    }
+  }
+}

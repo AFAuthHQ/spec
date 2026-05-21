@@ -1,0 +1,13 @@
+{
+  "name": "account_expired",
+  "description": "The account is in EXPIRED state and subsequent requests are no longer accepted.",
+  "section": "§6.1, §11.3",
+  "code": "account_expired",
+  "http_status": 410,
+  "envelope": {
+    "error": {
+      "code": "account_expired",
+      "message": "Account has expired"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "invitation_not_found",
+  "description": "The supplied claim token does not correspond to any known pending invitation.",
+  "section": "§7.4, §11.3",
+  "code": "invitation_not_found",
+  "http_status": 410,
+  "envelope": {
+    "error": {
+      "code": "invitation_not_found",
+      "message": "Invitation not found"
+    }
+  }
+}

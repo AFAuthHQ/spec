@@ -1,0 +1,34 @@
+{
+  "name": "cross-keyid-nonce-reuse",
+  "description": "Two requests share the same `nonce` value but use distinct `keyid`s. Per §5.6, the nonce-uniqueness invariant is scoped to (keyid, nonce), so this MUST be accepted — re-using a nonce across DIDs is not a replay.",
+  "section": "C.6",
+  "request": {
+    "method": "GET",
+    "target_uri": "https://api.example.com/afauth/v1/accounts/me",
+    "body": null
+  },
+  "content_digest": null,
+  "covered_components": [
+    "@method",
+    "@target-uri"
+  ],
+  "signature_params": {
+    "created": 1715000000,
+    "expires": 1715000060,
+    "nonce": "c3d4e5f607182930",
+    "keyid": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "alg": "ed25519"
+  },
+  "canonical_signature_input": "\"@method\": GET\n\"@target-uri\": https://api.example.com/afauth/v1/accounts/me\n\"@signature-params\": (\"@method\" \"@target-uri\");created=1715000000;expires=1715000060;nonce=\"c3d4e5f607182930\";keyid=\"did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr\";alg=\"ed25519\"",
+  "signature_hex": "33d04684636f8930613feaecf00c32d49ba34b997f66c29cb222a2af32cfdd238ed30b4e70d701d40875f1e27d8d80607cd9972da3daede130beff5611a64903",
+  "public_key_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+  "verifier_now_unix_seconds": 1715000030,
+  "expected_outcome": {
+    "type": "accept"
+  },
+  "extra_setup": {
+    "kind": "prime_nonce_under_other_keyid",
+    "other_keyid": "did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW",
+    "note": "Before verifying this vector, the harness inserts (other_keyid, \"c3d4e5f607182930\") into the nonce store. The vector's own (keyid, nonce) is still fresh from the verifier's perspective and MUST be accepted."
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "not_claimed",
+  "description": "The operation requires the account to be in CLAIMED state and it is not.",
+  "section": "§11.3",
+  "code": "not_claimed",
+  "http_status": 409,
+  "envelope": {
+    "error": {
+      "code": "not_claimed",
+      "message": "Account is not claimed"
+    }
+  }
+}

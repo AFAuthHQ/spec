@@ -1,0 +1,13 @@
+{
+  "name": "revoked_key",
+  "description": "The signing key has been revoked (via rotation per §8.1 or owner-initiated per §8.4).",
+  "section": "§8.3, §11.3",
+  "code": "revoked_key",
+  "http_status": 401,
+  "envelope": {
+    "error": {
+      "code": "revoked_key",
+      "message": "Account key has been revoked"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "invalid_signature",
+  "description": "Signature verification failed, required Signature/Signature-Input headers are missing or malformed, or required canonical components were not signed.",
+  "section": "§5.5, §11.3",
+  "code": "invalid_signature",
+  "http_status": 401,
+  "envelope": {
+    "error": {
+      "code": "invalid_signature",
+      "message": "Signature verification failed"
+    }
+  }
+}

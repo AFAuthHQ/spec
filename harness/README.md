@@ -4,14 +4,37 @@ Minimum-viable conformance runner for the v0.1 test vectors.
 
 ## What it does
 
-Loads every `*.json` vector under [`../vectors/signatures/`](../vectors/signatures/) and, for each vector:
+Loads every `*.json` vector across three categories and runs the
+appropriate checks per category. Any failure prints the offending
+vector name and a short diagnostic, and the runner exits with
+status `1`.
+
+### Signatures (§C.1, §C.2)
+
+For every `*.json` under [`../vectors/signatures/`](../vectors/signatures/):
 
 1. Confirms the `content_digest` field is a SHA-256 of the request body (or `null` if no body).
 2. Re-builds the RFC 9421 canonical signature input from `request` + `covered_components` + `signature_params`, and asserts byte-equality with the committed `canonical_signature_input`.
 3. Decodes the `did:key` from `public_key_did`, derives the Ed25519 public key, and verifies the committed `signature_hex` against the canonical input.
 4. Asserts `signature_params.keyid == public_key_did`.
 
-Any failure prints the offending vector name and a short diagnostic, and the runner exits with status `1`.
+### Error envelopes (§C.5)
+
+For every `*.json` under [`../vectors/errors/`](../vectors/errors/):
+
+1. Asserts `code` is one of the §11.3 reserved values.
+2. Asserts `http_status` is one of the §11.2 statuses.
+3. Asserts `envelope.error.code === code` and `envelope.error.message` is a string.
+4. Rejects unknown fields on `envelope.error` (allowed: `code`, `message`, `details`).
+
+### Replay-window (§C.6)
+
+For every `*.json` under [`../vectors/replay-window/`](../vectors/replay-window/):
+
+1. Builds a verifier with the vector's `verifier_now_unix_seconds`.
+2. If `extra_setup.kind === 'prime_nonce_under_other_keyid'`, primes the nonce store under that keyid.
+3. Verifies the signed request and asserts the result matches `expected_outcome`.
+4. For accept-with-replay vectors, re-verifies on the same nonce store and asserts the second result is `replayed_nonce`.
 
 ## Running
 
@@ -50,11 +73,8 @@ Vectors are deterministic: the generator produces byte-identical output for an u
 
 ## What this harness does NOT cover
 
-Only Appendix C.1 and C.2 are exercised. The harness is intentionally narrow for v0.1. Future expansion targets:
+Appendix C.1, C.2, C.5, and C.6 are exercised. The remaining sections
+are still to land as separate vector directories under `vectors/`:
 
 - **C.3** discovery-document parsing (well-formed, malformed, forward-compatible).
 - **C.4** recipient-value normalisation (NFKC, E.164, OIDC issuer+sub, DID canonical form).
-- **C.5** error-envelope structure per §11.
-- **C.6** replay-window sequences (expired/future-dated/replayed).
-
-These will land as separate vector directories under `vectors/` with parallel harness modules.

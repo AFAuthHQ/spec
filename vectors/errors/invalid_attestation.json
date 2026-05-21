@@ -1,0 +1,13 @@
+{
+  "name": "invalid_attestation",
+  "description": "An attestation header (§10.2) is present but its signature, audience, or expiry is invalid.",
+  "section": "§10, §11.3",
+  "code": "invalid_attestation",
+  "http_status": 401,
+  "envelope": {
+    "error": {
+      "code": "invalid_attestation",
+      "message": "Attestation invalid"
+    }
+  }
+}

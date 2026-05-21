@@ -1,0 +1,13 @@
+{
+  "name": "already_claimed",
+  "description": "The account is already in CLAIMED state and the operation is not permitted in that state.",
+  "section": "§7.2, §11.3",
+  "code": "already_claimed",
+  "http_status": 409,
+  "envelope": {
+    "error": {
+      "code": "already_claimed",
+      "message": "Account is already claimed"
+    }
+  }
+}

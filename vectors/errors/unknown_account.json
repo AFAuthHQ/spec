@@ -1,0 +1,13 @@
+{
+  "name": "unknown_account",
+  "description": "The referenced account does not exist. Returned only when implicit signup is disabled.",
+  "section": "§6.5, §11.3",
+  "code": "unknown_account",
+  "http_status": 404,
+  "envelope": {
+    "error": {
+      "code": "unknown_account",
+      "message": "Account not found"
+    }
+  }
+}
