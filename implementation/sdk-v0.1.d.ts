@@ -132,7 +132,18 @@ declare module '@afauth/sdk/agent' {
     /** Restore from a 32-byte private key. */
     static fromPrivateKey(privateKey: Ed25519PrivateKey): Promise<Agent>;
 
-    /** Low-level: sign any request. */
+    /**
+     * Lower-level escape hatch: sign any AFAuth request. Defaults match
+     * the spec, so callers normally pass no `opts`:
+     *   - coveredComponents:  ['@method','@target-uri'] when body is absent,
+     *                         plus 'content-digest' when body is present.
+     *   - expiresInSeconds:   60
+     *   - nonce:              16 random bytes, hex
+     *
+     * Override only for testing or to support v0.2+ endpoints not yet
+     * covered by a builder. The protocol-aware builders below are the
+     * primary path. See `implementation/adr/0004-sdk-api-shape.md`.
+     */
     signRequest(
       req: { method: string; url: string; body?: string | null },
       opts?: SignOptions,
@@ -215,17 +226,47 @@ declare module '@afauth/sdk/server' {
     did: Did;
     state: AccountState;
     pendingRecipient?: Recipient;
-    pendingInvitation?: { token: string; expiresAt: string };
     owner?: { identity: Recipient; userId: string; claimedAt: string };
     revoked?: boolean;
   }
 
+  /**
+   * Storage contract for AFAuth accounts. Mutations are exposed as named
+   * methods rather than a generic upsert — each carries the atomicity
+   * contract required by the spec section it implements. Adding a new
+   * mutation is intentionally a deliberate interface change. See
+   * `implementation/adr/0004-sdk-api-shape.md`.
+   */
   export interface AccountStore {
     get(did: Did): Promise<Account | null>;
-    /** Atomic upsert; the implementation MUST enforce the §7.3 single-invitation invariant. */
-    upsert(account: Account): Promise<void>;
-    /** Token resolution for the claim-completion endpoint. */
-    findByPendingToken(token: string): Promise<Account | null>;
+
+    /** Implicit signup (§6.3). Idempotent; returning an existing account is fine. */
+    createUnclaimed(did: Did): Promise<Account>;
+
+    /**
+     * §7.3 atomic invitation: invalidates any prior pending invitation,
+     * installs new pending_recipient + token + TTL. Implementation MUST
+     * enforce single-invitation-at-a-time at the storage layer (unique
+     * constraint, conditional put, or serialised update path).
+     */
+    setPendingInvitation(
+      did: Did, recipient: Recipient, token: string, expiresAt: string,
+    ): Promise<Account>;
+
+    /**
+     * §7.4 atomic claim: finds by token, verifies the token is unconsumed
+     * and unexpired, transitions to CLAIMED, persists owner, clears pending.
+     * Returns null if the token was missing, expired, or already consumed.
+     */
+    completeClaimByToken(
+      token: string, owner: NonNullable<Account['owner']>,
+    ): Promise<Account | null>;
+
+    /** §8.1 / §8.2 atomic key rotation. */
+    rotateKey(oldDid: Did, newDid: Did, rotatedAt: string): Promise<Account>;
+
+    /** §8.4 atomic owner-initiated revocation. */
+    revoke(did: Did, revokedAt: string): Promise<Account>;
   }
 
   // ---------- Recipient handlers (§7.7) ----------
@@ -310,10 +351,21 @@ declare module '@afauth/sdk/server' {
 // @afauth/sdk/worker
 // ============================================================
 declare module '@afauth/sdk/worker' {
-  import type { ServerOptions, NonceStore } from '@afauth/sdk/server';
+  import type { ServerOptions, NonceStore, OwnerSession } from '@afauth/sdk/server';
+
+  export interface WorkerOptions extends ServerOptions {
+    /**
+     * Required. Bridges the Worker's uniform routing to the §7.4
+     * claim-completion asymmetry — only that endpoint depends on a
+     * human-authenticated session, all others ride agent signatures.
+     * Return `null` to reject with `401 owner_authentication_required`.
+     * See `implementation/adr/0004-sdk-api-shape.md`.
+     */
+    extractOwnerSession: (req: Request) => Promise<OwnerSession | null>;
+  }
 
   /** Cloudflare Worker handler. Routes the five AFAuth endpoints; 404 otherwise. */
-  export function createWorker(opts: ServerOptions): ExportedHandler;
+  export function createWorker(opts: WorkerOptions): ExportedHandler;
 
   /** Cloudflare KV–backed nonce store; uses KV TTL for §5.6 expiry. */
   export class KvNonceStore implements NonceStore {

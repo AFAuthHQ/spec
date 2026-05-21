@@ -1,0 +1,107 @@
+# ADR-0004: SDK API shape — `AccountStore`, claim session, `signRequest`
+
+## Status
+Accepted 2026-05-21.
+
+## Context
+
+Three coupled API questions surfaced during the initial design sketch of
+`@afauth/sdk`. They share a common theme: how does the SDK express
+protocol-level invariants in the type system, and where do we trade
+ergonomic flexibility for safety?
+
+1. **Storage atomicity.** The spec (§7.3, §7.4, §8.1, §8.4) makes
+   atomicity normative for several state transitions, most notably the
+   single-pending-invitation invariant. Should the SDK express storage
+   via a generic `upsert(account)` (callsite-bound atomicity) or via
+   named per-operation methods (interface-bound atomicity)?
+
+2. **Claim-completion session asymmetry.** Four of the five endpoints
+   are agent-signed; only `/claim/<token>` requires a human-authenticated
+   session. Should `Server.handleClaimCompletion` take the session as an
+   explicit parameter — making the asymmetry visible — or should the
+   `Server` extract it via a callback, making all five handlers look the
+   same?
+
+3. **Low-level signing.** `Agent` exposes high-level builders for the
+   protocol's endpoints. Should it also expose a low-level
+   `signRequest(req, opts)` that lets callers build arbitrary signed
+   requests? Power and forward-compatibility on one side; misuse and
+   non-conformant signatures on the other.
+
+## Decision
+
+### (1) `AccountStore` is named atomic operations, not generic CRUD
+
+```typescript
+interface AccountStore {
+  get(did): Promise<Account | null>;
+  createUnclaimed(did): Promise<Account>;
+  setPendingInvitation(did, recipient, token, expiresAt): Promise<Account>;
+  completeClaimByToken(token, owner): Promise<Account | null>;
+  rotateKey(oldDid, newDid, rotatedAt): Promise<Account>;
+  revoke(did, revokedAt): Promise<Account>;
+}
+```
+
+Each mutation method carries the atomicity contract of the spec section
+it implements. The implementer chooses the storage primitives that
+satisfy that contract; the caller cannot violate it by composing wrong.
+
+### (2) `handleClaimCompletion(req, session)` — explicit at the handler, extractor at the Worker
+
+`Server.handleClaimCompletion` takes an explicit `session: OwnerSession`
+parameter. The Worker helper accepts a required `extractOwnerSession`
+callback in `WorkerOptions` so the Worker's internal routing stays
+uniform. The asymmetry — that one endpoint depends on human
+authentication while the other four ride agent signatures — is
+expressed at the API boundary where it matters, and abstracted at the
+routing boundary where uniformity matters.
+
+### (3) `Agent.signRequest` is public with spec-conformant defaults
+
+`signRequest` remains on `Agent`. Defaults are chosen so the common
+case requires no `opts`: `coveredComponents` derives from the request
+shape (add `content-digest` when body is present); `expiresInSeconds`
+defaults to 60; `nonce` defaults to 16 random bytes hex. Builders
+(`buildOwnerInvitation`, `buildKeyRotation`, `buildAccountIntrospection`)
+are the primary path; `signRequest` is the documented escape hatch.
+
+## Consequences
+
+- **Positive (1).** Caller code cannot break §7.3 atomicity. The set
+  of mutations on the interface equals the set of mutations the protocol
+  defines — the API is not larger than a thoughtful CRUD interface
+  would have been, just better-typed.
+- **Positive (2).** Every callsite of `handleClaimCompletion` is forced
+  to express the human-auth dependency. The Worker layer absorbs the
+  uniformity concern without erasing the asymmetry from the type system.
+- **Positive (3).** Integrators can adopt v0.2 endpoints by calling
+  `signRequest` directly while waiting for an SDK release with builders;
+  the defaults eliminate the most common misuse (forgetting to include
+  `content-digest` for a body-carrying request).
+- **Negative (1).** Adding a new protocol mutation requires an interface
+  change. This is intentional: new protocol mutations should pass
+  deliberate review.
+- **Negative (3).** A determined caller can construct a non-conformant
+  signature. Mitigated by: the audience is sophisticated (agent authors,
+  not end users); bad signatures fail verification loudly with §11 error
+  codes; the defaults match the spec.
+- **Neutral.** ADR-0004 documents these trade-offs so the
+  implementation phase need not relitigate them.
+
+## Alternatives considered
+
+- **(1) Transactional callback** (`withPendingToken(fn)`): more flexible
+  but maps poorly to Cloudflare KV, which lacks general transactions.
+- **(1) Optimistic concurrency with version tokens.** Forces every
+  backend to support a versioning model the protocol does not require.
+- **(2) `Server`-level `extractOwnerSession` callback.** Hides the §7.4
+  human-auth dependency one level too deep. Direct `Server` consumers
+  (without the Worker helper) would lose the type-system reminder that
+  the endpoint is different.
+- **(3) `signRequest` only via `agent.advanced.signRequest`.** Relocates
+  the surface without changing what can be expressed.
+- **(3) Separate `LowLevelSigner` class.** Fragments the API for no
+  protocol-level reason; the safety argument is already addressed by
+  sane defaults.
