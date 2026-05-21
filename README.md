@@ -25,8 +25,18 @@ This repository contains the specification for **AFAuth** — an open protocol t
 
 ## Reference implementations
 
-- CLI + agent: [`github.com/AFAuthHQ/cli`](https://github.com/AFAuthHQ/cli)
-- TypeScript SDKs: [`github.com/AFAuthHQ/typescript-sdk`](https://github.com/AFAuthHQ/typescript-sdk)
+- **CLI + agent**: [`github.com/AFAuthHQ/cli`](https://github.com/AFAuthHQ/cli) — Go.
+  Pre-built binaries on the [releases page](https://github.com/AFAuthHQ/cli/releases) (linux/darwin/windows × amd64/arm64), or `go install github.com/AFAuthHQ/cli/cmd/afauth@latest`.
+- **TypeScript SDKs**: [`github.com/AFAuthHQ/typescript-sdk`](https://github.com/AFAuthHQ/typescript-sdk).
+  Published to npm under [`@afauthhq`](https://www.npmjs.com/org/afauthhq):
+  ```
+  npm i @afauthhq/agent@alpha     # client / agent
+  npm i @afauthhq/server@alpha    # service handlers + Verifier
+  npm i @afauthhq/worker@alpha    # Cloudflare Workers bindings
+  npm i @afauthhq/core@alpha      # primitives shared by the above
+  ```
+
+Both reference implementations track the v0.1 spec; the first published release is `0.1.0-alpha.0`.
 
 Alternative implementations are welcome. The protocol is intentionally small and language-agnostic.
 
