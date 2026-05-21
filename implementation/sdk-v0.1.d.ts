@@ -715,4 +715,14 @@ declare module '@afauth/worker' {
     constructor(namespace: KVNamespace, opts?: { now?: () => number });
     take(key: string, config: RateLimitConfig): Promise<RateLimitDecision>;
   }
+
+  /**
+   * Cloudflare D1–backed AccountStore. The schema lives at
+   * `packages/worker/migrations/0001_init.sql`; apply via
+   * `wrangler d1 migrations apply <db-name>` before first use.
+   * Every atomic op uses D1's `batch()` for a transactional grouping.
+   */
+  export class D1AccountStore {
+    constructor(db: D1Database);
+  }
 }
