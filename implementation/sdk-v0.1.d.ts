@@ -88,7 +88,7 @@ declare module '@afauth/core' {
     | 'already_claimed' | 'not_claimed' | 'owner_authentication_required'
     | 'owner_binding_blocked' | 'account_expired' | 'rate_limit_exceeded'
     | 'malformed_request' | 'unsupported_recipient_type'
-    // Reserved by AFAP-0002 (draft).
+    // §7.5 freshness floor: owner session present but stale.
     | 'owner_session_too_stale';
 
   export class AFAuthError extends Error {
@@ -479,14 +479,24 @@ declare module '@afauth/server' {
     userId: string;
     /**
      * ISO-8601 timestamp of the most recent authentication event
-     * this session evidences. Optional for backward compatibility.
-     * Required by AFAP-0002's §7.5 freshness floor — handlers
-     * gating owner-binding operations on freshness MUST reject
-     * sessions whose authenticatedAt is older than the configured
-     * window with `owner_session_too_stale` (403).
+     * this session evidences. Required by §7.5's freshness floor
+     * for owner-binding operations; optional on the type for
+     * backward compatibility with claim-completion sessions, which
+     * are exempt (§7.5 applies post-claim only).
      */
     authenticatedAt?: string;
   }
+
+  /**
+   * §7.5 freshness check. Throws `AFAuthError("owner_session_too_stale",
+   * 403, …)` if `session.authenticatedAt` is missing or older than
+   * `maxAgeSeconds`. Use in service-defined owner-binding routes
+   * before the underlying storage mutation.
+   */
+  export function assertFreshOwnerSession(
+    session: OwnerSession,
+    opts: { maxAgeSeconds: number; now?: () => number },
+  ): void;
 
   export class Server {
     constructor(opts: ServerOptions);
