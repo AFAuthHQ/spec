@@ -34,6 +34,26 @@ declare module '@afauth/core' {
   /** Decode a `did:key:z...` to its 32-byte Ed25519 public key. Throws on non-canonical input. */
   export function decodeDidKey(did: Did): Ed25519PublicKey;
 
+  // ---------- DID resolution (§3.1) ----------
+
+  /**
+   * Resolves a DID to its 32-byte Ed25519 public key. The two reference
+   * impls are `DidKeyResolver` here and `DidWebResolver` (in `@afauth/server`).
+   * `CompositeDidResolver` dispatches by method.
+   */
+  export interface DidResolver {
+    resolve(did: Did): Promise<Ed25519PublicKey>;
+  }
+
+  export class DidKeyResolver implements DidResolver {
+    resolve(did: Did): Promise<Ed25519PublicKey>;
+  }
+
+  export class CompositeDidResolver implements DidResolver {
+    constructor(resolvers: Readonly<Record<string, DidResolver>>);
+    resolve(did: Did): Promise<Ed25519PublicKey>;
+  }
+
   // ---------- Recipient registry (§7.7) ----------
 
   export type Recipient =
@@ -254,7 +274,14 @@ declare module '@afauth/agent' {
 // @afauth/server
 // ============================================================
 declare module '@afauth/server' {
-  import type { Did, Recipient, AFAuthError, DiscoveryDocument } from '@afauth/core';
+  import type {
+    Did,
+    DidResolver,
+    Ed25519PublicKey,
+    Recipient,
+    AFAuthError,
+    DiscoveryDocument,
+  } from '@afauth/core';
   // Re-export so callers importing from @afauth/server don't need a
   // second import line.
   export type { DiscoveryDocument };
@@ -422,6 +449,36 @@ declare module '@afauth/server' {
      * supply a durable list (e.g., `KvRevocationList`).
      */
     revocationList?: RevocationList;
+    /**
+     * Optional DID resolver. Defaults to `did:key`-only per ADR-0003.
+     * Pass `new CompositeDidResolver({ key: new DidKeyResolver(), web: new DidWebResolver({…}) })`
+     * to accept §3.1.2 `did:web` identifiers.
+     */
+    didResolver?: DidResolver;
+  }
+
+  // ---------- did:web resolver (§3.1.2) ----------
+
+  export interface DidWebResolverOptions {
+    /** Pluggable fetch. Defaults to globalThis.fetch. */
+    fetch?: typeof globalThis.fetch;
+    /** Default: 300. RECOMMENDED ≤ 3600 per §3.1.2. */
+    positiveCacheTtlSeconds?: number;
+    /** Default: 60. */
+    negativeCacheTtlSeconds?: number;
+    /** Default: 5000ms. */
+    timeoutMs?: number;
+    /** Default: 65536 bytes. */
+    maxBytes?: number;
+    /** Default: false. Test-only — production MUST stay false. */
+    allowInsecureTransport?: boolean;
+  }
+
+  export class DidWebResolver implements DidResolver {
+    constructor(opts?: DidWebResolverOptions);
+    resolve(did: Did): Promise<Ed25519PublicKey>;
+    /** Drop the cached entry for `did` — call from verify-failure paths per §3.1.2. */
+    invalidate(did: Did): void;
   }
 
   export interface VerifiedRequest {

@@ -1,7 +1,7 @@
-# ADR-0003: `did:key`-only DID resolver in v0.1
+# ADR-0003: DID resolver shape for v0.1
 
 ## Status
-Accepted 2026-05-21.
+Accepted 2026-05-21. **Amended 2026-05-21** to ship `did:web` in v0.1 alongside `did:key`; original "did:key only" decision superseded.
 
 ## Context
 
@@ -15,26 +15,47 @@ operations have very different correctness and dependency profiles.
 
 ## Decision
 
-The v0.1 SDK ships **only `did:key` resolution**, in-process, in
-`@afauth/core`. The `Verifier` (in `@afauth/server`) accepts a resolver hook so a
-`did:web` implementation can be added in v0.2 without breaking the
-verification API. The hook is a single function
-`(did: Did) => Promise<Ed25519PublicKey>`; the built-in `did:key`
-implementation is the default.
+**Original (initial v0.1 milestones M0-M4):** ship only `did:key`
+resolution, in-process, in `@afauth/core`, with a resolver hook on
+`Verifier` so additional methods can be added without breaking the API.
+
+**Amended (v0.1 beta hardening pass):** ship both `did:key` AND
+`did:web` in v0.1. The shape is unchanged — `Verifier` still accepts an
+optional `didResolver`; the default is still `DidKeyResolver` for
+backward compatibility — but `DidWebResolver` is now a first-class
+shipped component in `@afauth/server`, and `CompositeDidResolver` in
+`@afauth/core` routes by method.
+
+The amendment lands because:
+
+1. **`did:web` is part of the spec's v0.1 surface (§3.1.2).** Withholding
+   it from the SDK forced every operator with a stable identity to
+   write their own resolver, which is exactly the kind of work an SDK
+   should absorb.
+2. **The "long-lived account" use case arrived sooner than expected.**
+   The §8 key-rotation flow is more useful with `did:web` than `did:key`
+   (rotation without identifier change); shipping rotation without
+   `did:web` was leaving the more durable account model unsupported.
+3. **The original "doubles the surface that needs hardening" concern
+   landed cheaper than feared.** `DidWebResolver` is one self-contained
+   ~300-line component with a tight test surface — TLS-only, schema
+   validation, positive+negative caching, pluggable fetch.
 
 ## Consequences
 
-- **Positive.** The SDK has no outbound HTTP from the verification path
-  in v0.1; cold-start cost stays low; the surface that needs hardening
-  for security review is small (one decoder); no network-failure modes
-  to design around.
-- **Negative.** Services that want `did:web` identifiers in v0.1 must
-  either wait for v0.2 or supply their own resolver via the hook —
-  doable but unsupported.
-- **Neutral.** Most v0.1 traffic is expected to be short-lived `did:key`
-  agents anyway. `did:web` becomes meaningful when an identity needs to
-  rotate keys without changing identifier, which is a long-lived account
-  pattern more relevant to v0.2.
+After the amendment:
+
+- **Positive.** Both v0.1 DID methods are now SDK-supplied. Services
+  with stable `did:web` identities can adopt AFAuth without rolling
+  their own resolver. The verifier path picks up no extra cost for
+  `did:key` traffic (the default resolver is still pure-CPU); `did:web`
+  callers opt in by passing `CompositeDidResolver({ key: …, web: … })`.
+- **Negative.** `did:web` adds a network dependency on the verification
+  hot path for services that enable it — the resolver's positive
+  cache (default 5 min) bounds the cost but doesn't eliminate it.
+  Operators should size cache TTL per §3.1.2 (RECOMMENDED ≤ 1 hour).
+- **Neutral.** The `Verifier`'s API is unchanged. Existing services
+  that didn't pass `didResolver` get the same behaviour as before.
 
 ## Alternatives considered
 
