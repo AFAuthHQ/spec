@@ -98,6 +98,24 @@ declare module '@afauth/core' {
     toResponse(): Response;
   }
 
+  // ---------- Recipient normalisation (§7.7) ----------
+
+  /**
+   * Normalises a recipient per §7.7. Returns the canonical form on
+   * success; throws `AFAuthError("malformed_request", 400, …)` if
+   * the input violates the type's rule.
+   *
+   *   - email — NFKC + ASCII case-fold.
+   *   - phone — MUST match /^\+[0-9]+$/; rejects extensions.
+   *   - oidc  — `issuer` is opaque; rejects fragment/query.
+   *   - did   — bare DID; rejects path/query/fragment; `did:key`
+   *             canonical form via `decodeDidKey`; `did:web` host
+   *             MUST be lowercase.
+   *
+   * Idempotent: `n(n(r)) === n(r)`.
+   */
+  export function normaliseRecipient(r: Recipient): Recipient;
+
   // ---------- Discovery document (§4) ----------
 
   /**
