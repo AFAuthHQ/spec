@@ -299,6 +299,21 @@ declare module '@afauth/server' {
     matches(opts: { pending: R; authenticated: R }): boolean;
   }
 
+  // ---------- Revocation list (§8.3) ----------
+
+  export interface RevocationList {
+    /** Returns true iff `did` has been revoked (via rotation or §8.4). */
+    isRevoked(did: Did): Promise<boolean>;
+    /** Atomically mark `did` as revoked with the given timestamp. */
+    add(did: Did, revokedAt: string): Promise<void>;
+  }
+
+  /** In-memory `RevocationList`. Suitable for tests and small examples. */
+  export class MemoryRevocationList implements RevocationList {
+    isRevoked(did: Did): Promise<boolean>;
+    add(did: Did, revokedAt: string): Promise<void>;
+  }
+
   // ---------- Verifier (§5.5) ----------
 
   export interface VerifierOptions {
@@ -308,6 +323,13 @@ declare module '@afauth/server' {
     clockSkewSeconds?: number;
     /** Default: 300. Max allowed `expires - created`. */
     maxSignatureLifetimeSeconds?: number;
+    /**
+     * Optional. When supplied, the Verifier rejects requests signed
+     * by a revoked DID with `401 revoked_key`. When omitted, the
+     * Verifier skips the revocation check — useful for unit tests
+     * that don't care about §8.3.
+     */
+    revocationList?: RevocationList;
   }
 
   export interface VerifiedRequest {
@@ -358,8 +380,21 @@ declare module '@afauth/server' {
     handleDiscovery(req: Request): Promise<Response>;
     handleOwnerInvitation(req: Request): Promise<Response>;
     handleClaimCompletion(req: Request, session: OwnerSession): Promise<Response>;
+    /**
+     * Pre-claim key rotation (§8.1). Post-claim rotation (§8.2)
+     * requires owner confirmation and is out of v0.1 scope; calls on
+     * a CLAIMED account return `403 owner_authentication_required`.
+     */
     handleKeyRotation(req: Request): Promise<Response>;
     handleAccountIntrospection(req: Request): Promise<Response>;
+
+    /**
+     * §8.4 owner-initiated revocation. Service calls this from its
+     * own owner-authenticated dashboard route (not from a signed
+     * AFAuth endpoint). Marks the account revoked and adds the DID
+     * to the configured `RevocationList`.
+     */
+    revoke(did: Did): Promise<void>;
   }
 }
 
@@ -367,7 +402,7 @@ declare module '@afauth/server' {
 // @afauth/worker
 // ============================================================
 declare module '@afauth/worker' {
-  import type { ServerOptions, NonceStore, OwnerSession } from '@afauth/server';
+  import type { ServerOptions, NonceStore, OwnerSession, RevocationList } from '@afauth/server';
 
   export interface WorkerOptions extends ServerOptions {
     /**
@@ -387,5 +422,15 @@ declare module '@afauth/worker' {
   export class KvNonceStore implements NonceStore {
     constructor(namespace: KVNamespace);
     seen(keyid: string, nonce: string, ttlSeconds: number): Promise<boolean>;
+  }
+
+  /**
+   * Cloudflare KV–backed revocation list (§8.3). Durable: revoked
+   * entries persist without TTL by default.
+   */
+  export class KvRevocationList implements RevocationList {
+    constructor(namespace: KVNamespace);
+    isRevoked(did: string): Promise<boolean>;
+    add(did: string, revokedAt: string): Promise<void>;
   }
 }

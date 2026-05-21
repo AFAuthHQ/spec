@@ -32,7 +32,10 @@ or Redis-backed implementation can be added later without an API change.
   already accepts replays inside the signature lifetime as the threat-model
   bound, so the KV window is a strict subset of that surface.
 - **Neutral.** The chosen interface (`seen(keyid, nonce, ttl) → was-new`)
-  is small enough to wrap almost any KV-shaped store.
+  is small enough to wrap almost any KV-shaped store. The companion
+  `RevocationList` (§8.3) shares the same KV namespace pattern with
+  a different key prefix (`revoked:<did>` vs `nonce:<keyid>:<nonce>`),
+  and does NOT use TTL — revoked entries are durable.
 
 ## Alternatives considered
 
