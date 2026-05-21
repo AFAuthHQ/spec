@@ -6,9 +6,10 @@ Accepted 2026-05-21.
 ## Context
 
 Three coupled API questions surfaced during the initial design sketch of
-`@afauth/sdk`. They share a common theme: how does the SDK express
-protocol-level invariants in the type system, and where do we trade
-ergonomic flexibility for safety?
+the SDK (the four `@afauth/*` packages in `AFAuthHQ/typescript-sdk`).
+They share a common theme: how does the SDK express protocol-level
+invariants in the type system, and where do we trade ergonomic
+flexibility for safety?
 
 1. **Storage atomicity.** The spec (§7.3, §7.4, §8.1, §8.4) makes
    atomicity normative for several state transitions, most notably the

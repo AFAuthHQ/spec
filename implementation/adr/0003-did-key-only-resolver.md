@@ -16,7 +16,7 @@ operations have very different correctness and dependency profiles.
 ## Decision
 
 The v0.1 SDK ships **only `did:key` resolution**, in-process, in
-`@afauth/sdk/core`. The `Verifier` accepts a resolver hook so a
+`@afauth/core`. The `Verifier` (in `@afauth/server`) accepts a resolver hook so a
 `did:web` implementation can be added in v0.2 without breaking the
 verification API. The hook is a single function
 `(did: Did) => Promise<Ed25519PublicKey>`; the built-in `did:key`

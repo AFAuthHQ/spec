@@ -1,19 +1,20 @@
 // AFAuth TypeScript SDK v0.1 — API sketch.
 //
 // This file is a design artefact, NOT a working type definition. It documents
-// the public surface that `@afauth/sdk` should expose at v0.1. Types are
-// intentionally minimal: exhaustive overloads, brand types, and JSDoc
-// citations to the spec come later, alongside the implementation.
+// the public surface that the SDK exposes across four packages at v0.1.
+// Types are intentionally minimal: exhaustive overloads, brand types, and
+// JSDoc citations to the spec come later, alongside the implementation.
 //
-// Reading order: core → agent → server → worker. The four modules map to the
-// four subpath imports of the published package.
+// Reading order: core → agent → server → worker. Each section is one npm
+// package, published independently under the `@afauth` scope from
+// AFAuthHQ/typescript-sdk's pnpm workspace.
 //
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 // ============================================================
-// @afauth/sdk/core
+// @afauth/core
 // ============================================================
-declare module '@afauth/sdk/core' {
+declare module '@afauth/core' {
   // ---------- Identifiers (§3) ----------
 
   /** A W3C DID. v0.1 supports `did:key:...` only; `did:web:...` recognised in types. */
@@ -99,12 +100,12 @@ declare module '@afauth/sdk/core' {
 }
 
 // ============================================================
-// @afauth/sdk/agent
+// @afauth/agent
 // ============================================================
-declare module '@afauth/sdk/agent' {
+declare module '@afauth/agent' {
   import type {
     Did, Recipient, Ed25519PublicKey, Ed25519PrivateKey, CoveredComponent,
-  } from '@afauth/sdk/core';
+  } from '@afauth/core';
 
   /** A complete request ready to `fetch()` — headers carry the AFAuth signature. */
   export interface SignedRequest {
@@ -197,11 +198,11 @@ declare module '@afauth/sdk/agent' {
 }
 
 // ============================================================
-// @afauth/sdk/server
+// @afauth/server
 // ============================================================
-declare module '@afauth/sdk/server' {
-  import type { Did, Recipient, AFAuthError } from '@afauth/sdk/core';
-  import type { DiscoveryDocument } from '@afauth/sdk/agent';
+declare module '@afauth/server' {
+  import type { Did, Recipient, AFAuthError } from '@afauth/core';
+  import type { DiscoveryDocument } from '@afauth/agent';
 
   // ---------- Nonce store (§5.6) ----------
 
@@ -348,10 +349,10 @@ declare module '@afauth/sdk/server' {
 }
 
 // ============================================================
-// @afauth/sdk/worker
+// @afauth/worker
 // ============================================================
-declare module '@afauth/sdk/worker' {
-  import type { ServerOptions, NonceStore, OwnerSession } from '@afauth/sdk/server';
+declare module '@afauth/worker' {
+  import type { ServerOptions, NonceStore, OwnerSession } from '@afauth/server';
 
   export interface WorkerOptions extends ServerOptions {
     /**
