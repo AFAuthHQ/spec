@@ -13,6 +13,8 @@ This repository contains the specification for **AFAuth** — an open protocol t
 - [`spec/core.md`](spec/core.md) — the protocol specification
 - [`spec/conformance.md`](spec/conformance.md) — conformance criteria (stub; full test suite planned)
 - [`schemas/well-known.json`](schemas/well-known.json) — JSON Schema for the `/.well-known/afauth` discovery document
+- [`vectors/`](vectors/) — test vectors covering canonical signature inputs, reference signatures, recipient normalisation, and error envelopes (see Appendix C of the spec)
+- [`harness/`](harness/) — minimal conformance harness that runs the test vectors against an implementation
 - [`proposals/`](proposals/README.md) — AFAuth Protocol Proposals (AFAPs)
 
 ## Reference implementations
@@ -24,4 +26,7 @@ Alternative implementations are welcome. The protocol is intentionally small and
 
 ## License
 
-The specification is licensed under [CC-BY 4.0](LICENSE).
+- **Specification text** (`spec/`, `proposals/`, `README.md`) — [CC-BY-4.0](LICENSE).
+- **Code-shaped artefacts** (`vectors/`, `schemas/`, `harness/`) — [Apache-2.0](LICENSE-CODE).
+
+This dual-licensing follows standard practice for protocol repositories that ship a normative text alongside reference test data and tooling.
