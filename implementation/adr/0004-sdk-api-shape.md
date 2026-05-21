@@ -6,7 +6,7 @@ Accepted 2026-05-21.
 ## Context
 
 Three coupled API questions surfaced during the initial design sketch of
-the SDK (the four `@afauth/*` packages in `AFAuthHQ/typescript-sdk`).
+the SDK (the four `@afauthhq/*` packages in `AFAuthHQ/typescript-sdk`).
 They share a common theme: how does the SDK express protocol-level
 invariants in the type system, and where do we trade ergonomic
 flexibility for safety?
@@ -136,8 +136,8 @@ during the M0–M4 review pass:
   validation + §4.5 algorithm-negotiation check (must advertise
   `ed25519`). Exposed so service-side code can use it without
   duplicating the rules.
-- **`DiscoveryDocument` lives in `@afauth/core`** (re-exported from
-  `@afauth/agent` and `@afauth/server`). Single source of truth.
+- **`DiscoveryDocument` lives in `@afauthhq/core`** (re-exported from
+  `@afauthhq/agent` and `@afauthhq/server`). Single source of truth.
 - **`VerifierOptions.revocationList` defaults to a fresh
   `MemoryRevocationList`** with a one-time `console.warn`. §8.3
   requires a revocation list; the SDK no longer silently runs without

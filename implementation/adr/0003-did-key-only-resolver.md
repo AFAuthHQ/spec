@@ -16,15 +16,15 @@ operations have very different correctness and dependency profiles.
 ## Decision
 
 **Original (initial v0.1 milestones M0-M4):** ship only `did:key`
-resolution, in-process, in `@afauth/core`, with a resolver hook on
+resolution, in-process, in `@afauthhq/core`, with a resolver hook on
 `Verifier` so additional methods can be added without breaking the API.
 
 **Amended (v0.1 beta hardening pass):** ship both `did:key` AND
 `did:web` in v0.1. The shape is unchanged — `Verifier` still accepts an
 optional `didResolver`; the default is still `DidKeyResolver` for
 backward compatibility — but `DidWebResolver` is now a first-class
-shipped component in `@afauth/server`, and `CompositeDidResolver` in
-`@afauth/core` routes by method.
+shipped component in `@afauthhq/server`, and `CompositeDidResolver` in
+`@afauthhq/core` routes by method.
 
 The amendment lands because:
 

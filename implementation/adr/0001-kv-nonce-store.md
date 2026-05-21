@@ -17,7 +17,7 @@ billing surface, additional latency on every call via RPC).
 
 The reference Worker uses **Cloudflare KV** with TTL equal to
 `(expires - created) + clockSkewSeconds`. The `NonceStore` interface in
-`@afauth/server` is the abstraction boundary; a Durable-Object–backed
+`@afauthhq/server` is the abstraction boundary; a Durable-Object–backed
 or Redis-backed implementation can be added later without an API change.
 
 ## Consequences

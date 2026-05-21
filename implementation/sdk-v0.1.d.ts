@@ -12,9 +12,9 @@
 // SPDX-License-Identifier: MIT
 
 // ============================================================
-// @afauth/core
+// @afauthhq/core
 // ============================================================
-declare module '@afauth/core' {
+declare module '@afauthhq/core' {
   // ---------- Identifiers (§3) ----------
 
   /** A W3C DID. v0.1 supports `did:key:...` only; `did:web:...` recognised in types. */
@@ -38,7 +38,7 @@ declare module '@afauth/core' {
 
   /**
    * Resolves a DID to its 32-byte Ed25519 public key. The two reference
-   * impls are `DidKeyResolver` here and `DidWebResolver` (in `@afauth/server`).
+   * impls are `DidKeyResolver` here and `DidWebResolver` (in `@afauthhq/server`).
    * `CompositeDidResolver` dispatches by method.
    */
   export interface DidResolver {
@@ -180,12 +180,12 @@ declare module '@afauth/core' {
 }
 
 // ============================================================
-// @afauth/agent
+// @afauthhq/agent
 // ============================================================
-declare module '@afauth/agent' {
+declare module '@afauthhq/agent' {
   import type {
     Did, Recipient, Ed25519PublicKey, Ed25519PrivateKey, CoveredComponent,
-  } from '@afauth/core';
+  } from '@afauthhq/core';
 
   /** A complete request ready to `fetch()` — headers carry the AFAuth signature. */
   export interface SignedRequest {
@@ -250,10 +250,10 @@ declare module '@afauth/agent' {
 
   // ---------- Discovery (§4) ----------
 
-  // `DiscoveryDocument` is defined in `@afauth/core` and re-exported
+  // `DiscoveryDocument` is defined in `@afauthhq/core` and re-exported
   // here for backward compatibility with code that imports it from
-  // `@afauth/agent`.
-  export type { DiscoveryDocument } from '@afauth/core';
+  // `@afauthhq/agent`.
+  export type { DiscoveryDocument } from '@afauthhq/core';
 
   /**
    * Unsigned GET of `/.well-known/afauth`. Validates content-type,
@@ -271,9 +271,9 @@ declare module '@afauth/agent' {
 }
 
 // ============================================================
-// @afauth/server
+// @afauthhq/server
 // ============================================================
-declare module '@afauth/server' {
+declare module '@afauthhq/server' {
   import type {
     Did,
     DidResolver,
@@ -281,8 +281,8 @@ declare module '@afauth/server' {
     Recipient,
     AFAuthError,
     DiscoveryDocument,
-  } from '@afauth/core';
-  // Re-export so callers importing from @afauth/server don't need a
+  } from '@afauthhq/core';
+  // Re-export so callers importing from @afauthhq/server don't need a
   // second import line.
   export type { DiscoveryDocument };
 
@@ -663,9 +663,9 @@ declare module '@afauth/server' {
 }
 
 // ============================================================
-// @afauth/worker
+// @afauthhq/worker
 // ============================================================
-declare module '@afauth/worker' {
+declare module '@afauthhq/worker' {
   import type {
     ServerOptions,
     NonceStore,
@@ -674,7 +674,7 @@ declare module '@afauth/worker' {
     RateLimitDecision,
     RateLimiter,
     RevocationList,
-  } from '@afauth/server';
+  } from '@afauthhq/server';
 
   export interface WorkerOptions extends ServerOptions {
     /**

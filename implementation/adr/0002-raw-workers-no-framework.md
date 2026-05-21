@@ -18,7 +18,7 @@ pulls in is one downstream consumers must also accept.
 The reference Worker uses **raw Cloudflare Workers** (`export default { fetch }`
 shape) plus a small in-house router (target: ≤30 lines of router code).
 No Hono, no itty-router, no Express-style middleware in the runtime
-dependency tree of `@afauth/worker`.
+dependency tree of `@afauthhq/worker`.
 
 ## Consequences
 
