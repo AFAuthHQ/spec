@@ -512,6 +512,46 @@ declare module '@afauth/server' {
     key_rotation?: RateLimitConfig;
   }
 
+  // ---------- Attestation (§10) ----------
+
+  export interface AttestationClaims {
+    iss: string;
+    sub: string;
+    exp: number;
+    [key: string]: unknown;
+  }
+
+  export interface Attestor {
+    /**
+     * Verifies an attestation JWT for `agentDid`. Throws
+     * `AFAuthError("invalid_attestation", …)` on any §10 violation.
+     */
+    verify(jwt: string, agentDid: Did): Promise<AttestationClaims>;
+  }
+
+  /** §10.3 service-operator HMAC. */
+  export class HmacAttestor implements Attestor {
+    constructor(opts: { iss: string; secret: Uint8Array | string; now?: () => number });
+    verify(jwt: string, agentDid: Did): Promise<AttestationClaims>;
+  }
+
+  /** Generic asymmetric attestor; fetches JWKS at construction. */
+  export class JwksAttestor implements Attestor {
+    constructor(opts: {
+      iss: string;
+      jwksUrl: string;
+      algorithms?: readonly string[];
+      now?: () => number;
+    });
+    verify(jwt: string, agentDid: Did): Promise<AttestationClaims>;
+  }
+
+  /** Routes by `iss` to per-attestor verifiers. */
+  export class MultiAttestor implements Attestor {
+    constructor(attestors: ReadonlyArray<Attestor>);
+    verify(jwt: string, agentDid: Did): Promise<AttestationClaims>;
+  }
+
   export interface VerifiedRequest {
     agentDid: Did;
     method: string;
@@ -563,6 +603,11 @@ declare module '@afauth/server' {
      */
     rateLimiter?: RateLimiter;
     rateLimits?: ServerRateLimits;
+    /**
+     * §10 attestation verifier. REQUIRED when discovery declares
+     * `billing.unclaimed_mode = "attested_only"` (§9.2).
+     */
+    attestor?: Attestor;
   }
 
   /**
