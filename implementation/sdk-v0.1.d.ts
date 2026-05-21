@@ -481,6 +481,37 @@ declare module '@afauth/server' {
     invalidate(did: Did): void;
   }
 
+  // ---------- Rate limiter (§11.3 rate_limit_exceeded) ----------
+
+  export interface RateLimitConfig {
+    limit: number;
+    windowSeconds: number;
+  }
+
+  export interface RateLimitDecision {
+    ok: boolean;
+    retryAfter?: number;
+    remaining?: number;
+    resetAt?: number;
+  }
+
+  export interface RateLimiter {
+    take(key: string, config: RateLimitConfig): Promise<RateLimitDecision>;
+  }
+
+  export class MemoryRateLimiter implements RateLimiter {
+    constructor(opts?: { now?: () => number });
+    take(key: string, config: RateLimitConfig): Promise<RateLimitDecision>;
+  }
+
+  export interface ServerRateLimits {
+    accounts?: RateLimitConfig;
+    account_introspection?: RateLimitConfig;
+    owner_invitation?: RateLimitConfig;
+    claim_completion?: RateLimitConfig;
+    key_rotation?: RateLimitConfig;
+  }
+
   export interface VerifiedRequest {
     agentDid: Did;
     method: string;
@@ -525,6 +556,13 @@ declare module '@afauth/server' {
      * operations against an unknown account return `404 unknown_account`.
      */
     implicitSignup?: boolean;
+    /**
+     * §11.3: rate limiter + per-route configs. When both are supplied,
+     * each named route enforces its limit and returns `429
+     * rate_limit_exceeded` with `Retry-After` once the bucket is full.
+     */
+    rateLimiter?: RateLimiter;
+    rateLimits?: ServerRateLimits;
   }
 
   /**
@@ -583,7 +621,15 @@ declare module '@afauth/server' {
 // @afauth/worker
 // ============================================================
 declare module '@afauth/worker' {
-  import type { ServerOptions, NonceStore, OwnerSession, RevocationList } from '@afauth/server';
+  import type {
+    ServerOptions,
+    NonceStore,
+    OwnerSession,
+    RateLimitConfig,
+    RateLimitDecision,
+    RateLimiter,
+    RevocationList,
+  } from '@afauth/server';
 
   export interface WorkerOptions extends ServerOptions {
     /**
@@ -613,5 +659,15 @@ declare module '@afauth/worker' {
     constructor(namespace: KVNamespace);
     isRevoked(did: string): Promise<boolean>;
     add(did: string, revokedAt: string): Promise<void>;
+  }
+
+  /**
+   * Cloudflare KV–backed rate limiter (§11.3). Fixed-window counter
+   * per key; KV's eventually-consistent reads mean racing isolates
+   * may over-count (fail-safe), never under-count.
+   */
+  export class KvRateLimiter implements RateLimiter {
+    constructor(namespace: KVNamespace, opts?: { now?: () => number });
+    take(key: string, config: RateLimitConfig): Promise<RateLimitDecision>;
   }
 }
