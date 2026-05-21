@@ -1,0 +1,14 @@
+{
+  "name": "did-with-query-rejected",
+  "description": "§7.7.4: DID URL query is forbidden.",
+  "section": "C.4",
+  "recipient_type": "did",
+  "input": {
+    "type": "did",
+    "value": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr?versionId=1"
+  },
+  "expected": {
+    "type": "reject",
+    "reason": "did contains DID URL component (query)"
+  }
+}

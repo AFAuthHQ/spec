@@ -36,6 +36,30 @@ For every `*.json` under [`../vectors/replay-window/`](../vectors/replay-window/
 3. Verifies the signed request and asserts the result matches `expected_outcome`.
 4. For accept-with-replay vectors, re-verifies on the same nonce store and asserts the second result is `replayed_nonce`.
 
+### Discovery (§C.3)
+
+For every `*.json` under [`../vectors/discovery/`](../vectors/discovery/):
+
+1. Runs the §4.3 required-field check and the §4.5
+   algorithm-negotiation check (`ed25519` must be advertised).
+2. Asserts the parse outcome (`accept` / `reject`) matches the
+   fixture's `expected`.
+
+### Recipients (§C.4)
+
+For every `*.json` under [`../vectors/recipients/`](../vectors/recipients/):
+
+1. Runs the type-specific normalisation rule:
+     - email — NFKC + `toLowerCase`
+     - phone — validate `^\+[0-9]+$`; reject `;ext=`, dashes, spaces
+     - oidc  — opaque issuer; reject fragment or query
+     - did   — bare DID; reject path/fragment/query; canonical
+               form via the existing `did:key` codec; reject
+               non-lowercase `did:web` host.
+2. For accept vectors, asserts the canonical output is byte-equal
+   to the fixture's `expected.canonical`.
+3. For reject vectors, asserts the rule throws.
+
 ## Running
 
 ```bash
@@ -71,10 +95,8 @@ A third-party verifier implementation can be plugged in by replacing `verifySign
 
 Vectors are deterministic: the generator produces byte-identical output for an unchanged fixture, so a regenerated diff against `main` flags any change to the canonicalisation rule, the keypair, or a fixture's signed material.
 
-## What this harness does NOT cover
+## Coverage
 
-Appendix C.1, C.2, C.5, and C.6 are exercised. The remaining sections
-are still to land as separate vector directories under `vectors/`:
-
-- **C.3** discovery-document parsing (well-formed, malformed, forward-compatible).
-- **C.4** recipient-value normalisation (NFKC, E.164, OIDC issuer+sub, DID canonical form).
+The harness now exercises Appendix C.1, C.2, C.3, C.4, C.5, and C.6.
+Independent implementations are encouraged to contribute additional
+vectors via the proposals process.

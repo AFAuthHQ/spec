@@ -1,0 +1,17 @@
+{
+  "name": "did-key-canonical-passthrough",
+  "description": "did:key in canonical multibase form passes through unchanged.",
+  "section": "C.4",
+  "recipient_type": "did",
+  "input": {
+    "type": "did",
+    "value": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr"
+  },
+  "expected": {
+    "type": "accept",
+    "canonical": {
+      "type": "did",
+      "value": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr"
+    }
+  }
+}

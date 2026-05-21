@@ -1,0 +1,14 @@
+{
+  "name": "phone-with-extension-rejected",
+  "description": "E.164 extension syntax `;ext=…` is explicitly forbidden by §7.7.2.",
+  "section": "C.4",
+  "recipient_type": "phone",
+  "input": {
+    "type": "phone",
+    "value": "+14155550173;ext=42"
+  },
+  "expected": {
+    "type": "reject",
+    "reason": "phone contains E.164 extension syntax"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "oidc-canonical-passthrough",
+  "description": "Issuer is treated as opaque; canonical value is byte-identical to input.",
+  "section": "C.4",
+  "recipient_type": "oidc",
+  "input": {
+    "type": "oidc",
+    "value": {
+      "issuer": "https://accounts.google.com",
+      "sub": "103948572345"
+    }
+  },
+  "expected": {
+    "type": "accept",
+    "canonical": {
+      "type": "oidc",
+      "value": {
+        "issuer": "https://accounts.google.com",
+        "sub": "103948572345"
+      }
+    }
+  }
+}

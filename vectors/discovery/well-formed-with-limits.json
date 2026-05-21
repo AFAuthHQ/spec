@@ -1,0 +1,25 @@
+{
+  "name": "well-formed-with-limits",
+  "description": "Adds the optional `limits` field (§4.4).",
+  "section": "C.3",
+  "document": {
+    "afauth_version": "0.1",
+    "service_did": "did:web:api.example.com",
+    "endpoints": {
+      "accounts": "/afauth/v1/accounts",
+      "owner_invitation": "/afauth/v1/accounts/me/owner-invitation",
+      "claim_page": "https://claim.example.com",
+      "claim_completion": "/afauth/v1/claim"
+    },
+    "signature_algorithms": [
+      "ed25519"
+    ],
+    "limits": {
+      "unclaimed_ttl_seconds": 2592000,
+      "unclaimed_rate_limit_per_hour": 100
+    }
+  },
+  "expected": {
+    "type": "accept"
+  }
+}

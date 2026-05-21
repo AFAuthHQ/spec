@@ -1,0 +1,14 @@
+{
+  "name": "phone-missing-plus-rejected",
+  "description": "A national-format number without `+` is not E.164.",
+  "section": "C.4",
+  "recipient_type": "phone",
+  "input": {
+    "type": "phone",
+    "value": "14155550173"
+  },
+  "expected": {
+    "type": "reject",
+    "reason": "phone is not E.164 (missing leading +)"
+  }
+}

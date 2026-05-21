@@ -1,0 +1,21 @@
+{
+  "name": "well-formed-minimal",
+  "description": "Minimal v0.1 document — only the §4.3 required fields. Implementations MUST accept.",
+  "section": "C.3",
+  "document": {
+    "afauth_version": "0.1",
+    "service_did": "did:web:api.example.com",
+    "endpoints": {
+      "accounts": "/afauth/v1/accounts",
+      "owner_invitation": "/afauth/v1/accounts/me/owner-invitation",
+      "claim_page": "https://claim.example.com",
+      "claim_completion": "/afauth/v1/claim"
+    },
+    "signature_algorithms": [
+      "ed25519"
+    ]
+  },
+  "expected": {
+    "type": "accept"
+  }
+}

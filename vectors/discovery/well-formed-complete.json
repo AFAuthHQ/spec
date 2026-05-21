@@ -1,0 +1,42 @@
+{
+  "name": "well-formed-complete",
+  "description": "All optional fields populated, plus the key_rotation endpoint.",
+  "section": "C.3",
+  "document": {
+    "afauth_version": "0.1",
+    "service_did": "did:web:api.example.com",
+    "endpoints": {
+      "accounts": "/afauth/v1/accounts",
+      "owner_invitation": "/afauth/v1/accounts/me/owner-invitation",
+      "claim_page": "https://claim.example.com",
+      "claim_completion": "/afauth/v1/claim",
+      "key_rotation": "/afauth/v1/accounts/me/keys/rotate"
+    },
+    "signature_algorithms": [
+      "ed25519"
+    ],
+    "features": [
+      "key_rotation",
+      "attestation"
+    ],
+    "recipient_types": [
+      "email",
+      "phone",
+      "oidc",
+      "did"
+    ],
+    "limits": {
+      "unclaimed_ttl_seconds": 2592000,
+      "unclaimed_rate_limit_per_hour": 100
+    },
+    "billing": {
+      "unclaimed_mode": "free",
+      "accepted_attestors": [
+        "stripe-projects"
+      ]
+    }
+  },
+  "expected": {
+    "type": "accept"
+  }
+}

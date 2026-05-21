@@ -1,0 +1,16 @@
+{
+  "name": "reject-missing-endpoints",
+  "description": "§4.3 endpoints object is required.",
+  "section": "C.3",
+  "document": {
+    "afauth_version": "0.1",
+    "service_did": "did:web:api.example.com",
+    "signature_algorithms": [
+      "ed25519"
+    ]
+  },
+  "expected": {
+    "type": "reject",
+    "reason": "missing required field endpoints"
+  }
+}

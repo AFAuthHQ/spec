@@ -1,0 +1,17 @@
+{
+  "name": "email-nfkc-compatibility-ligature",
+  "description": "NFKC compatibility decomposition expands the `ﬁ` ligature (U+FB01) into `fi`.",
+  "section": "C.4",
+  "recipient_type": "email",
+  "input": {
+    "type": "email",
+    "value": "aﬁnd@example.com"
+  },
+  "expected": {
+    "type": "accept",
+    "canonical": {
+      "type": "email",
+      "value": "afind@example.com"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "email-nfkc-decomposed-precomposed",
+  "description": "NFKC normalisation collapses combining sequences to their precomposed form. Here `e\\u0301` (e + combining acute) becomes `\\u00e9` (é).",
+  "section": "C.4",
+  "recipient_type": "email",
+  "input": {
+    "type": "email",
+    "value": "élise@example.com"
+  },
+  "expected": {
+    "type": "accept",
+    "canonical": {
+      "type": "email",
+      "value": "élise@example.com"
+    }
+  }
+}

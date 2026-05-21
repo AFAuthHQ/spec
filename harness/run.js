@@ -34,6 +34,8 @@ const crypto = require('crypto');
 const VECTORS_DIR = path.join(__dirname, '..', 'vectors', 'signatures');
 const ERRORS_DIR = path.join(__dirname, '..', 'vectors', 'errors');
 const REPLAY_DIR = path.join(__dirname, '..', 'vectors', 'replay-window');
+const DISCOVERY_DIR = path.join(__dirname, '..', 'vectors', 'discovery');
+const RECIPIENTS_DIR = path.join(__dirname, '..', 'vectors', 'recipients');
 
 // §11.3 reserved codes.
 const RESERVED_ERROR_CODES = new Set([
@@ -300,6 +302,123 @@ function checkReplayVector(vector) {
   return { ok: errors.length === 0, errors };
 }
 
+// ---------- C.3 discovery-document checks ----------
+
+// Reference parser for §4.3 required-field + §4.5 algorithm-negotiation
+// validation. Returns null on accept; throws Error on reject.
+function checkDiscoveryDocument(doc) {
+  if (!doc || typeof doc !== 'object') throw new Error('document is not an object');
+  if (doc.afauth_version !== '0.1') throw new Error('afauth_version is not "0.1"');
+  if (typeof doc.service_did !== 'string' || doc.service_did.length === 0) {
+    throw new Error('missing required field service_did');
+  }
+  if (!doc.endpoints || typeof doc.endpoints !== 'object') {
+    throw new Error('missing required field endpoints');
+  }
+  for (const k of ['accounts', 'owner_invitation', 'claim_page', 'claim_completion']) {
+    if (typeof doc.endpoints[k] !== 'string' || doc.endpoints[k].length === 0) {
+      throw new Error(`missing required endpoints.${k}`);
+    }
+  }
+  if (!Array.isArray(doc.signature_algorithms)) {
+    throw new Error('signature_algorithms must be an array');
+  }
+  if (!doc.signature_algorithms.includes('ed25519')) {
+    throw new Error('service does not advertise ed25519');
+  }
+}
+
+function checkDiscoveryVector(vector) {
+  const errors = [];
+  let outcome = 'accept';
+  try {
+    checkDiscoveryDocument(vector.document);
+  } catch (e) {
+    outcome = 'reject';
+  }
+  if (outcome !== vector.expected.type) {
+    errors.push(`expected ${vector.expected.type}, got ${outcome}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+// ---------- C.4 recipient-normalisation checks ----------
+
+function normaliseRecipient(r) {
+  if (!r || typeof r !== 'object') throw new Error('recipient is not an object');
+  switch (r.type) {
+    case 'email': {
+      if (typeof r.value !== 'string') throw new Error('email.value must be a string');
+      return { type: 'email', value: r.value.normalize('NFKC').toLowerCase() };
+    }
+    case 'phone': {
+      if (typeof r.value !== 'string') throw new Error('phone.value must be a string');
+      if (!/^\+[0-9]+$/.test(r.value)) {
+        if (/[;,xX]/.test(r.value)) throw new Error('phone contains E.164 extension syntax');
+        if (!r.value.startsWith('+')) throw new Error('phone is not E.164 (missing leading +)');
+        throw new Error('phone contains characters other than + and 0-9');
+      }
+      return { type: 'phone', value: r.value };
+    }
+    case 'oidc': {
+      if (!r.value || typeof r.value.issuer !== 'string' || typeof r.value.sub !== 'string') {
+        throw new Error('oidc.value must be { issuer, sub }');
+      }
+      if (r.value.issuer.includes('#')) throw new Error('oidc issuer contains fragment');
+      if (r.value.issuer.includes('?')) throw new Error('oidc issuer contains query');
+      return { type: 'oidc', value: { issuer: r.value.issuer, sub: r.value.sub } };
+    }
+    case 'did': {
+      if (typeof r.value !== 'string') throw new Error('did.value must be a string');
+      const after = r.value.slice('did:'.length);
+      if (after.includes('/')) throw new Error('did contains DID URL component (path)');
+      if (after.includes('#')) throw new Error('did contains DID URL component (fragment)');
+      if (after.includes('?')) throw new Error('did contains DID URL component (query)');
+      if (r.value.startsWith('did:key:')) {
+        // Canonical-form check delegated to the existing harness
+        // decoder: decodeDidKey throws on non-canonical encodings,
+        // so if it returns the input was canonical.
+        decodeDidKey(r.value);
+        return { type: 'did', value: r.value };
+      }
+      if (r.value.startsWith('did:web:')) {
+        const rest = r.value.slice('did:web:'.length);
+        if (rest !== rest.toLowerCase()) {
+          throw new Error('did:web host MUST be lowercase');
+        }
+        return { type: 'did', value: r.value };
+      }
+      throw new Error(`unsupported did method: ${r.value.split(':')[1]}`);
+    }
+    default:
+      throw new Error(`unsupported recipient type: ${r.type}`);
+  }
+}
+
+function deepEqual(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function checkRecipientVector(vector) {
+  const errors = [];
+  let outcome;
+  let canonical;
+  try {
+    canonical = normaliseRecipient(vector.input);
+    outcome = 'accept';
+  } catch (_e) {
+    outcome = 'reject';
+  }
+  if (outcome !== vector.expected.type) {
+    errors.push(`expected ${vector.expected.type}, got ${outcome}`);
+    return { ok: false, errors };
+  }
+  if (outcome === 'accept' && !deepEqual(canonical, vector.expected.canonical)) {
+    errors.push(`canonical mismatch: expected ${JSON.stringify(vector.expected.canonical)}, got ${JSON.stringify(canonical)}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 // ---------- main ----------
 
 function loadVectors() {
@@ -345,9 +464,11 @@ function main() {
   const sigs = loadVectors();
   const errs = loadDir(ERRORS_DIR);
   const replays = loadDir(REPLAY_DIR);
+  const discovery = loadDir(DISCOVERY_DIR);
+  const recipients = loadDir(RECIPIENTS_DIR);
 
   if (requestedNames.length > 0) {
-    const all = [...sigs, ...errs, ...replays];
+    const all = [...sigs, ...errs, ...replays, ...discovery, ...recipients];
     const have = new Set(all.map(v => v.vector.name));
     const missing = requestedNames.filter(n => !have.has(n));
     if (missing.length > 0) {
@@ -356,19 +477,26 @@ function main() {
     }
     const filter = (set) => set.filter(v => requestedNames.includes(v.vector.name));
     const totals = [
-      runSuite('signatures',     filter(sigs),    checkVector),
-      runSuite('errors',         filter(errs),    checkErrorVector),
-      runSuite('replay-window',  filter(replays), checkReplayVector),
+      runSuite('signatures',     filter(sigs),       checkVector),
+      runSuite('errors',         filter(errs),       checkErrorVector),
+      runSuite('replay-window',  filter(replays),    checkReplayVector),
+      runSuite('discovery',      filter(discovery),  checkDiscoveryVector),
+      runSuite('recipients',     filter(recipients), checkRecipientVector),
     ].reduce((a, b) => ({ pass: a.pass + b.pass, fail: a.fail + b.fail }), { pass: 0, fail: 0 });
     console.log(``);
     console.log(`${totals.pass} passed, ${totals.fail} failed`);
     process.exit(totals.fail > 0 ? 1 : 0);
   }
 
-  const r1 = runSuite('signatures',    sigs,    checkVector);
-  const r2 = runSuite('errors',        errs,    checkErrorVector);
-  const r3 = runSuite('replay-window', replays, checkReplayVector);
-  const totals = { pass: r1.pass + r2.pass + r3.pass, fail: r1.fail + r2.fail + r3.fail };
+  const r1 = runSuite('signatures',    sigs,       checkVector);
+  const r2 = runSuite('errors',        errs,       checkErrorVector);
+  const r3 = runSuite('replay-window', replays,    checkReplayVector);
+  const r4 = runSuite('discovery',     discovery,  checkDiscoveryVector);
+  const r5 = runSuite('recipients',    recipients, checkRecipientVector);
+  const totals = {
+    pass: r1.pass + r2.pass + r3.pass + r4.pass + r5.pass,
+    fail: r1.fail + r2.fail + r3.fail + r4.fail + r5.fail,
+  };
   const grandTotal = totals.pass + totals.fail;
   console.log(``);
   console.log(`${totals.pass} passed, ${totals.fail} failed (of ${grandTotal})`);
@@ -386,11 +514,17 @@ module.exports = {
   checkVector,
   checkErrorVector,
   checkReplayVector,
+  checkDiscoveryVector,
+  checkDiscoveryDocument,
+  checkRecipientVector,
+  normaliseRecipient,
   verifyForReplayCheck,
   loadVectors,
   loadDir,
   ERRORS_DIR,
   REPLAY_DIR,
+  DISCOVERY_DIR,
+  RECIPIENTS_DIR,
   RESERVED_ERROR_CODES,
   ALLOWED_STATUSES,
 };

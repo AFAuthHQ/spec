@@ -1,0 +1,17 @@
+{
+  "name": "phone-canonical-e164-passthrough",
+  "description": "Canonical E.164 (`+` followed by digits) passes through unchanged.",
+  "section": "C.4",
+  "recipient_type": "phone",
+  "input": {
+    "type": "phone",
+    "value": "+14155550173"
+  },
+  "expected": {
+    "type": "accept",
+    "canonical": {
+      "type": "phone",
+      "value": "+14155550173"
+    }
+  }
+}

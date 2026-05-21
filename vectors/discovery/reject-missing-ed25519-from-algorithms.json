@@ -1,0 +1,22 @@
+{
+  "name": "reject-missing-ed25519-from-algorithms",
+  "description": "§4.5: services MUST include ed25519 to be v0.1-conformant; agents MUST honour signature_algorithms.",
+  "section": "C.3",
+  "document": {
+    "afauth_version": "0.1",
+    "service_did": "did:web:api.example.com",
+    "endpoints": {
+      "accounts": "/afauth/v1/accounts",
+      "owner_invitation": "/afauth/v1/accounts/me/owner-invitation",
+      "claim_page": "https://claim.example.com",
+      "claim_completion": "/afauth/v1/claim"
+    },
+    "signature_algorithms": [
+      "rsa-sha256"
+    ]
+  },
+  "expected": {
+    "type": "reject",
+    "reason": "service does not advertise ed25519"
+  }
+}

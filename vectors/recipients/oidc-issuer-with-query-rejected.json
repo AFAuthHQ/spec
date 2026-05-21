@@ -1,0 +1,17 @@
+{
+  "name": "oidc-issuer-with-query-rejected",
+  "description": "§7.7.3: implementations MUST reject issuer values containing a query.",
+  "section": "C.4",
+  "recipient_type": "oidc",
+  "input": {
+    "type": "oidc",
+    "value": {
+      "issuer": "https://accounts.google.com?env=staging",
+      "sub": "1"
+    }
+  },
+  "expected": {
+    "type": "reject",
+    "reason": "oidc issuer contains query"
+  }
+}

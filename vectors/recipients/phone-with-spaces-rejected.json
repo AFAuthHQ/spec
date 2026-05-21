@@ -1,0 +1,14 @@
+{
+  "name": "phone-with-spaces-rejected",
+  "description": "Whitespace is forbidden by §7.7.2 (\"MUST reject values containing any character other than `+` and the digits `0`–`9`\").",
+  "section": "C.4",
+  "recipient_type": "phone",
+  "input": {
+    "type": "phone",
+    "value": "+1 415 555 0173"
+  },
+  "expected": {
+    "type": "reject",
+    "reason": "phone contains characters other than + and 0-9"
+  }
+}

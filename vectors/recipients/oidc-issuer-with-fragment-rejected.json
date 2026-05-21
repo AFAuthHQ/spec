@@ -1,0 +1,17 @@
+{
+  "name": "oidc-issuer-with-fragment-rejected",
+  "description": "§7.7.3: implementations MUST reject issuer values containing a fragment.",
+  "section": "C.4",
+  "recipient_type": "oidc",
+  "input": {
+    "type": "oidc",
+    "value": {
+      "issuer": "https://accounts.google.com#main",
+      "sub": "1"
+    }
+  },
+  "expected": {
+    "type": "reject",
+    "reason": "oidc issuer contains fragment"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "email-uppercase-lowercased",
+  "description": "Upper-case ASCII email is case-folded per §7.7.1 / RFC 5321 §2.4.",
+  "section": "C.4",
+  "recipient_type": "email",
+  "input": {
+    "type": "email",
+    "value": "ALICE@EXAMPLE.COM"
+  },
+  "expected": {
+    "type": "accept",
+    "canonical": {
+      "type": "email",
+      "value": "alice@example.com"
+    }
+  }
+}

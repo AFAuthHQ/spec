@@ -1,0 +1,17 @@
+{
+  "name": "email-lowercase-ascii-passthrough",
+  "description": "Lowercase ASCII email passes through unchanged.",
+  "section": "C.4",
+  "recipient_type": "email",
+  "input": {
+    "type": "email",
+    "value": "alice@example.com"
+  },
+  "expected": {
+    "type": "accept",
+    "canonical": {
+      "type": "email",
+      "value": "alice@example.com"
+    }
+  }
+}

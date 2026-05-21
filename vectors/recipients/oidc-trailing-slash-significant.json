@@ -1,0 +1,23 @@
+{
+  "name": "oidc-trailing-slash-significant",
+  "description": "Issuer is opaque — a trailing slash IS significant. The normalised form preserves the wire value byte-for-byte.",
+  "section": "C.4",
+  "recipient_type": "oidc",
+  "input": {
+    "type": "oidc",
+    "value": {
+      "issuer": "https://accounts.google.com/",
+      "sub": "103948572345"
+    }
+  },
+  "expected": {
+    "type": "accept",
+    "canonical": {
+      "type": "oidc",
+      "value": {
+        "issuer": "https://accounts.google.com/",
+        "sub": "103948572345"
+      }
+    }
+  }
+}
