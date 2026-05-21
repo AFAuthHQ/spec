@@ -44,6 +44,7 @@ All 17 codes reserved by §11.3:
 | `rate_limit_exceeded` | 429 | §11.2 |
 | `malformed_request` | 400 | (general) |
 | `unsupported_recipient_type` | 400 | §4.4, §7.2 |
+| `owner_session_too_stale` | 403 | AFAP-0002 (draft) — §7.5 |
 
 Not every code is reachable in every v0.1 SDK build (e.g.,
 attestation codes require optional §10 attestation support). The
