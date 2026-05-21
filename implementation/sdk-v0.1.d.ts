@@ -39,7 +39,7 @@ declare module '@afauth/core' {
   export type Recipient =
     | { type: 'email'; value: string }                         // §7.7.1 — NFKC + lowercased
     | { type: 'phone'; value: string }                         // §7.7.2 — E.164, no extensions
-    | { type: 'oidc';  issuer: string; subject: string }       // §7.7.3 — issuer opaque
+    | { type: 'oidc';  value: { issuer: string; sub: string } } // §7.7.3 — issuer opaque
     | { type: 'did';   value: Did };                           // §7.7.4 — canonical form
 
   // ---------- Signature parameters (§5.2) ----------
@@ -97,6 +97,46 @@ declare module '@afauth/core' {
     /** Serialises to a §11.1 error envelope Response. */
     toResponse(): Response;
   }
+
+  // ---------- Discovery document (§4) ----------
+
+  /**
+   * v0.1 `/.well-known/afauth` document shape. Lives in `core` so the
+   * agent (which fetches it) and the server (which serves and
+   * consults it) share the same definition.
+   */
+  export interface DiscoveryDocument {
+    afauth_version: '0.1';
+    service_did: Did;
+    endpoints: {
+      accounts: string;
+      owner_invitation: string;
+      claim_page: string;
+      claim_completion: string;
+      key_rotation?: string;
+    };
+    signature_algorithms: readonly 'ed25519'[];
+    features?: readonly ('attestation' | 'key_rotation')[];
+    recipient_types?: readonly ('email' | 'phone' | 'oidc' | 'did')[];
+    limits?: {
+      unclaimed_ttl_seconds?: number;
+      unclaimed_rate_limit_per_hour?: number;
+    };
+    billing?: {
+      unclaimed_mode?: string;
+      accepted_attestors?: readonly string[];
+    };
+  }
+
+  // ---------- Invitation IDs (§7.2) ----------
+
+  /**
+   * Derives the public `invitation_id` from the secret claim token
+   * via SHA-256. The forward direction is deterministic; the reverse
+   * direction requires inverting SHA-256, so leaking the id does
+   * not leak the token.
+   */
+  export function deriveInvitationId(token: string): string;
 }
 
 // ============================================================
@@ -170,39 +210,34 @@ declare module '@afauth/agent' {
 
   // ---------- Discovery (§4) ----------
 
-  export interface DiscoveryDocument {
-    afauth_version: '0.1';
-    service_did: Did;
-    endpoints: {
-      accounts: string;
-      owner_invitation: string;
-      claim_page: string;
-      claim_completion: string;
-      key_rotation?: string;
-    };
-    signature_algorithms: readonly 'ed25519'[];
-    features?: readonly ('attestation' | 'key_rotation')[];
-    recipient_types?: readonly ('email' | 'phone' | 'oidc' | 'did')[];
-    limits?: {
-      unclaimed_ttl_seconds?: number;
-      unclaimed_rate_limit_per_hour?: number;
-    };
-    billing?: {
-      unclaimed_mode?: string;
-      accepted_attestors?: readonly string[];
-    };
-  }
+  // `DiscoveryDocument` is defined in `@afauth/core` and re-exported
+  // here for backward compatibility with code that imports it from
+  // `@afauth/agent`.
+  export type { DiscoveryDocument } from '@afauth/core';
 
-  /** Unsigned GET of `/.well-known/afauth`. Validates `afauth_version === '0.1'`. */
+  /**
+   * Unsigned GET of `/.well-known/afauth`. Validates content-type,
+   * required fields per §4.3, and the §4.5 agent obligation to
+   * honour advertised signature_algorithms (must include ed25519).
+   */
   export function fetchDiscovery(baseUrl: string): Promise<DiscoveryDocument>;
+
+  /**
+   * Validates that `value` is a v0.1 discovery document. Returns the
+   * value as `DiscoveryDocument` on success; throws `AFAuthError`
+   * otherwise. Unknown forward-compat fields (§4.2) are preserved.
+   */
+  export function assertDiscoveryDocument(value: unknown): DiscoveryDocument;
 }
 
 // ============================================================
 // @afauth/server
 // ============================================================
 declare module '@afauth/server' {
-  import type { Did, Recipient, AFAuthError } from '@afauth/core';
-  import type { DiscoveryDocument } from '@afauth/agent';
+  import type { Did, Recipient, AFAuthError, DiscoveryDocument } from '@afauth/core';
+  // Re-export so callers importing from @afauth/server don't need a
+  // second import line.
+  export type { DiscoveryDocument };
 
   // ---------- Nonce store (§5.6) ----------
 
@@ -214,9 +249,18 @@ declare module '@afauth/server' {
     seen(keyid: Did, nonce: string, ttlSeconds: number): Promise<boolean>;
   }
 
-  /** Single-process Map-backed nonce store. Suitable for tests. */
+  /**
+   * Single-process Map-backed nonce store. Suitable for tests and
+   * small single-process deployments. Lazily garbage-collects
+   * expired entries on every Nth insert (default N=256). Production
+   * deployments needing durability across process restarts should
+   * use a KV-backed implementation.
+   */
   export class MemoryNonceStore implements NonceStore {
+    constructor(opts?: { gcEvery?: number });
     seen(keyid: Did, nonce: string, ttlSeconds: number): Promise<boolean>;
+    /** Current entry count (post any lazy sweep). */
+    size(): number;
   }
 
   // ---------- Account store (§6) ----------
@@ -285,6 +329,26 @@ declare module '@afauth/server' {
     revoke(did: Did, revokedAt: string): Promise<Account>;
   }
 
+  /**
+   * In-memory `AccountStore` implementation. Suitable for tests and
+   * the reference Worker. Maintains an O(1) reverse index from DID to
+   * pending-invitation token so §7.3 atomic supersession is constant
+   * time instead of scanning all tokens.
+   */
+  export class MemoryAccountStore implements AccountStore {
+    get(did: Did): Promise<Account | null>;
+    findByPendingToken(token: string): Promise<Account | null>;
+    createUnclaimed(did: Did): Promise<Account>;
+    setPendingInvitation(
+      did: Did, recipient: Recipient, token: string, expiresAt: string,
+    ): Promise<Account>;
+    completeClaimByToken(
+      token: string, owner: NonNullable<Account['owner']>,
+    ): Promise<Account | null>;
+    rotateKey(oldDid: Did, newDid: Did, rotatedAt: string): Promise<Account>;
+    revoke(did: Did, revokedAt: string): Promise<Account>;
+  }
+
   // ---------- Recipient handlers (§7.7) ----------
 
   export interface RecipientHandler<R extends Recipient = Recipient> {
@@ -298,6 +362,13 @@ declare module '@afauth/server' {
     /** Apply the §7.7 match relation between the pending and authenticated recipient. */
     matches(opts: { pending: R; authenticated: R }): boolean;
   }
+
+  /**
+   * Reference `email` RecipientHandler that logs the magic link to
+   * `console.error`. For local development and tests only;
+   * production deployments substitute their own mail-sending impl.
+   */
+  export const consoleEmailHandler: RecipientHandler;
 
   // ---------- Revocation list (§8.3) ----------
 
@@ -326,8 +397,9 @@ declare module '@afauth/server' {
     /**
      * Optional. When supplied, the Verifier rejects requests signed
      * by a revoked DID with `401 revoked_key`. When omitted, the
-     * Verifier skips the revocation check — useful for unit tests
-     * that don't care about §8.3.
+     * Verifier defaults to a fresh `MemoryRevocationList` and emits
+     * a one-time `console.warn` — production deployments should
+     * supply a durable list (e.g., `KvRevocationList`).
      */
     revocationList?: RevocationList;
   }
@@ -363,6 +435,19 @@ declare module '@afauth/server' {
     discovery: DiscoveryDocument | (() => Promise<DiscoveryDocument>);
     /** Used to compose `endpoints.claim_completion` URLs. */
     baseUrl: string;
+    /**
+     * §7.2: allow-list of hosts that may appear in `redirect_url` on
+     * owner-invitation requests. Undefined or `[]` → `redirect_url` is
+     * forbidden (any value produces 400 malformed_request). Non-empty
+     * list → only URLs whose host matches an entry are accepted.
+     */
+    redirectAllowList?: readonly string[];
+    /**
+     * §6.3: whether the service permits implicit signup on first
+     * authenticated operation. Default `true`. When `false`,
+     * operations against an unknown account return `404 unknown_account`.
+     */
+    implicitSignup?: boolean;
   }
 
   /**

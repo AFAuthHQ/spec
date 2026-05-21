@@ -116,3 +116,29 @@ are the primary path; `signRequest` is the documented escape hatch.
 - **(3) Separate `LowLevelSigner` class.** Fragments the API for no
   protocol-level reason; the safety argument is already addressed by
   sane defaults.
+
+## Addendum: M0–M4 review fixes
+
+These extensions follow the same shape as (1)–(3) and were applied
+during the M0–M4 review pass:
+
+- **`ServerOptions.redirectAllowList`.** Enforces §7.2 ("MUST validate
+  it against an allow-list of service-controlled hosts"). Fail-closed
+  default — when no list is configured, any `redirect_url` in the
+  request body produces `400 malformed_request`.
+- **`ServerOptions.implicitSignup`.** Defaults true; set false to
+  return `404 unknown_account` instead of creating on first touch.
+  Surface for §11.3's "only when implicit signup is disabled" clause.
+- **`deriveInvitationId(token)`.** Public `invitation_id` is
+  `inv_` + base64url(sha256(token).slice(0, 12)), preventing the
+  earlier (M2) bug where the id leaked the secret claim token.
+- **`assertDiscoveryDocument(value)`.** §4.3 required-field
+  validation + §4.5 algorithm-negotiation check (must advertise
+  `ed25519`). Exposed so service-side code can use it without
+  duplicating the rules.
+- **`DiscoveryDocument` lives in `@afauth/core`** (re-exported from
+  `@afauth/agent` and `@afauth/server`). Single source of truth.
+- **`VerifierOptions.revocationList` defaults to a fresh
+  `MemoryRevocationList`** with a one-time `console.warn`. §8.3
+  requires a revocation list; the SDK no longer silently runs without
+  one if the caller forgot to configure it.
