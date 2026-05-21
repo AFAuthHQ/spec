@@ -241,6 +241,21 @@ declare module '@afauth/server' {
   export interface AccountStore {
     get(did: Did): Promise<Account | null>;
 
+    /**
+     * Read-only lookup by pending invitation token. Returns the account
+     * iff the token is currently associated with a pending invitation
+     * that has not yet expired. Returns `null` for missing, expired,
+     * or already-consumed tokens.
+     *
+     * Used by `Server.handleClaimCompletion` to inspect
+     * `pendingRecipient` and apply the §7.7 match relation before
+     * calling the atomic `completeClaimByToken`. The atomicity
+     * guarantee of `completeClaimByToken` is preserved: if the token
+     * is consumed between this read and the commit, the commit
+     * returns `null` and the handler reports `invitation_expired`.
+     */
+    findByPendingToken(token: string): Promise<Account | null>;
+
     /** Implicit signup (§6.3). Idempotent; returning an existing account is fine. */
     createUnclaimed(did: Did): Promise<Account>;
 

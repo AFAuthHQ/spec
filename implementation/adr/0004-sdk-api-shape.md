@@ -36,7 +36,10 @@ flexibility for safety?
 
 ```typescript
 interface AccountStore {
+  // reads
   get(did): Promise<Account | null>;
+  findByPendingToken(token): Promise<Account | null>;
+  // atomic mutations
   createUnclaimed(did): Promise<Account>;
   setPendingInvitation(did, recipient, token, expiresAt): Promise<Account>;
   completeClaimByToken(token, owner): Promise<Account | null>;
@@ -48,6 +51,13 @@ interface AccountStore {
 Each mutation method carries the atomicity contract of the spec section
 it implements. The implementer chooses the storage primitives that
 satisfy that contract; the caller cannot violate it by composing wrong.
+
+The two read methods (`get`, `findByPendingToken`) are intentionally
+separated from mutations: `findByPendingToken` exists so
+`handleClaimCompletion` can apply the §7.7 match relation against
+`pendingRecipient` before invoking the atomic commit. The atomicity
+contract on `completeClaimByToken` is preserved — if the token is
+consumed in the read-then-commit gap, the commit returns `null`.
 
 ### (2) `handleClaimCompletion(req, session)` — explicit at the handler, extractor at the Worker
 
