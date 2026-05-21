@@ -1,8 +1,10 @@
 # AFAuth Protocol
 
-> An open protocol for agent-first account creation and human handoff.
+> **Agent-First Auth.** The open protocol that makes AI agents first-class citizens of every service.
 
-This repository contains the specification for **AFAuth** — an open protocol that lets AI agents sign up to internet services using a self-generated cryptographic keypair, operate those accounts autonomously, and optionally hand ownership to a human at any later point.
+Human attention is finite. Agent attention is exploding. AFAuth is how that new attention reaches services — and how agents reach every service that exists. AI agents sign themselves up using their own cryptographic keypair, operate accounts on their own without a human in the loop, and optionally hand ownership to a human at any later point.
+
+This repository is the normative specification.
 
 ## Status
 
