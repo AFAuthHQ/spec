@@ -540,6 +540,10 @@ The protocol defines a single normative constraint on post-claim agent authority
 
 This category — termed **owner-binding operations** — includes, at a minimum: changing the bound owner identity, enrolling additional authentication credentials, adding or modifying recovery contacts that authenticate as the owner, linking federated identities, and adding additional principals to the account. The mapping from this category to concrete service operations is service-defined; services MUST classify their own operations against this rule. This classification is a policy decision and belongs to the service that defines the operation; a verifier that is decoupled from the service (for example, an edge gateway) provides the verified signer identity, but MUST NOT be the sole enforcement point for §7.5.
 
+For an owner-authenticated session to authorize an owner-binding operation, the service MUST require evidence of a *fresh* authentication event satisfying the assurance bar from §12.3, performed within a service-defined freshness window measured at the moment of the operation. Implementations SHOULD use a window of 60 to 300 seconds. A session that is otherwise valid but does not evidence a fresh authentication event MUST cause the service to reject the owner-binding operation with `403 Forbidden` and the error code `owner_session_too_stale` (§11.3). The service SHOULD prompt the human to re-authenticate and resubmit; the rejection MUST NOT consume any rate-limit allowance attributable to the agent.
+
+This freshness floor closes the takeover window where an attacker who pops the human's long-lived session cookie could otherwise immediately invoke owner-binding operations. The two-step verify invariant (§7.1) survives across the lifetime of the account only if the human side of the authentication is recently evidenced at each owner-binding moment.
+
 This constraint preserves the durability of the two-step verify invariant (§7.1) past the moment of binding: revoking a compromised agent key under §8.4 fully restores the owner's sole authentication authority, because no authentication path planted by the agent alone can exist.
 
 Beyond this single rule, the protocol takes no position on what an agent may do at any account state. Pre-claim agent authority, post-claim agent scope beyond the owner-binding rule above, the form of any claim-time manifest, and the treatment of obligations incurred pre-claim are all service responsibilities. See §12.7 for the security risks the protocol delegates to services.
@@ -591,7 +595,7 @@ This specification reserves the following recipient types for v0.1. Conforming s
 
 - **Value shape:** A bare DID identifying the human's verification method. The value MUST NOT include DID URL components (no path, query, or fragment). The DID method MUST be one the service accepts.
 - **Canonical form:** Per the method's specification — for `did:key`, the multibase encoding canonical form defined in §3.1.1; for `did:web`, the lowercase host with the method-derived path syntax per [W3C-DID-WEB]. Implementations MUST reject non-canonical equivalents (e.g., `did:web:Example.COM` for `did:web:example.com`).
-- **Verification ceremony:** A challenge-response in which the service issues a freshness-bound, account-specific challenge nonce, the human signs it with the private key corresponding to the DID's verification method, and the service verifies the signature. The exact framing (PAR, OIDC4VC, OpenID4VP, or a service-native ceremony) is service-defined.
+- **Verification ceremony:** A challenge-response in which the service issues a freshness-bound, account-specific challenge nonce, the human signs it with the private key corresponding to the DID's verification method, and the service verifies the signature. The exact framing (PAR, OIDC4VC, OpenID4VP, or a service-native ceremony) is service-defined. Where the DID's verification method exposes a public key compatible with [WebAuthn-L3] (P-256, RS256, EdDSA), the canonical ceremony framing is a `navigator.credentials.get(publicKey: PublicKeyCredentialRequestOptions)` call whose `challenge` is the service-issued freshness nonce, whose `allowCredentials` references the DID's verification method, and whose `userVerification` is `"required"`. Implementations that adopt this framing inherit phishing resistance and per-ceremony user verification without additional protocol surface.
 - **Match relation:** Canonical DID equality combined with a verified signature over the challenge issued for this invitation.
 
 ```json
@@ -751,9 +755,9 @@ Field semantics:
 
 Conforming services MUST use these codes when the corresponding condition applies:
 
-`invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `owner_binding_blocked`, `account_expired`, `rate_limit_exceeded`, `malformed_request`, `unsupported_recipient_type`.
+`invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `owner_binding_blocked`, `owner_session_too_stale`, `account_expired`, `rate_limit_exceeded`, `malformed_request`, `unsupported_recipient_type`.
 
-`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general. `unsupported_recipient_type` is returned with `400 Bad Request` when an invitation request specifies a recipient `type` not present in the service's declared `recipient_types` (§4.4, §7.2).
+`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general. `owner_session_too_stale` is also returned with `403 Forbidden`, when an owner-authenticated session is present but the most recent authentication event it evidences predates the service's §7.5 freshness window; it is distinct from `owner_authentication_required` (no session at all) and `owner_binding_blocked` (an agent-signed request to an owner-binding op). `unsupported_recipient_type` is returned with `400 Bad Request` when an invitation request specifies a recipient `type` not present in the service's declared `recipient_types` (§4.4, §7.2).
 
 Services MAY define additional error codes for service-specific conditions, but SHOULD prefix them with a service-specific namespace (e.g., `example_quota_exceeded`).
 
@@ -776,6 +780,8 @@ The combined use of `created`, `expires`, `nonce`, and `@target-uri` in the sign
 The strength of the claim ceremony (§7.4) depends on the human-authentication method the service chooses. The protocol permits services to require any human-authentication flow at the claim page — magic link, passkey, OIDC, or others — and takes no position on the choice.
 
 Services SHOULD select a method appropriate to the value of the account. Email-based magic links are classified as AAL1 by [NIST-SP-800-63B] and are vulnerable to adversary-in-the-middle phishing, prefetch consumption by email-security scanners, and downstream effects of email-account takeover. Phishing-resistant methods (WebAuthn / FIDO2 passkeys) provide AAL2, with hardware-bound credentials reaching AAL3. Services that require stronger assurance SHOULD require phishing-resistant authentication at the claim page and for owner-binding operations (§7.5).
+
+Services targeting AAL2 or higher SHOULD use a phishing-resistant ceremony — canonical examples are WebAuthn-bound credentials per [WebAuthn-L3] (with `userVerification: "required"`) and OIDC flows that yield an `acr` value of `phishing-resistant` per [OIDC-MFA]. A magic link delivered to an email address remains the simplest interoperable default for the `email` recipient type (§7.7.1); services that accept this trade-off MUST document the assurance level in their claim-page user experience so the claimant can decide whether to enrol a stronger credential before completing the ceremony.
 
 If a service uses magic links as a claim mechanism, it SHOULD require an active POST confirmation on the landing page rather than treating a GET as token consumption, to defend against link prefetching by email-security scanners. The service SHOULD also provide sufficient context for the human to recognise the originating agent before committing the binding; static informational banners are known to be ineffective under habituation, so active acknowledgement is preferable.
 
@@ -889,6 +895,8 @@ This specification uses the `did:key` method [W3C-DID-KEY]. No new DID method is
 - **[W3C-DID-KEY]** Longley, D., and D. Zagidulin, "The did:key Method v0.7", W3C Community Group Report.
 - **[W3C-DID-WEB]** Steele, O., Sporny, M., et al., "did:web Method Specification", W3C Credentials Community Group.
 - **[did-key-issue-35]** "Multicodec varint decoding ambiguity in did:key", w3c-ccg/did-method-key issue #35.
+- **[WebAuthn-L3]** Bradley, J., Hodges, J. C., Jones, M. B., Kumar, A., Lindemann, R., and Lundberg, E., "Web Authentication: An API for accessing Public Key Credentials — Level 3", W3C Working Draft.
+- **[OIDC-MFA]** "Authentication Method Reference Values" registry, IETF; and OpenID Connect's `acr` parameter as defined in OpenID Connect Core 1.0 §2.
 
 ### 15.2 Informative references
 
@@ -1077,6 +1085,44 @@ The service's claim page initiates an OIDC Authorization Code flow with Google; 
 ```
 
 The agent never delivered an email; the entire claim ceremony was a federated sign-in.
+
+### B.2.2 Owner invitation and claim (passkey ceremony)
+
+For an AAL2+ deployment (per §12.3), the service can run the claim ceremony entirely as a WebAuthn challenge-response. The invitation is identical in shape; the service's claim page does not send an email — instead it presents a passkey challenge bound to the invitation token.
+
+The service's claim page issues:
+
+```javascript
+// Service-side: claim page JavaScript
+const credential = await navigator.credentials.get({
+  publicKey: {
+    challenge: Uint8Array.from(atob(invitationChallenge), c => c.charCodeAt(0)),
+    rpId: "claim.example.com",
+    allowCredentials: [{
+      id: aliceRegisteredCredentialId,  // from prior passkey registration
+      type: "public-key",
+    }],
+    userVerification: "required",
+  },
+});
+
+await fetch(`/afauth/v1/claim/${claimToken}`, {
+  method: "POST",
+  credentials: "include",
+  body: JSON.stringify({
+    webauthn_assertion: {
+      id: credential.id,
+      clientDataJSON: bytesToBase64(credential.response.clientDataJSON),
+      authenticatorData: bytesToBase64(credential.response.authenticatorData),
+      signature: bytesToBase64(credential.response.signature),
+    },
+  }),
+});
+```
+
+The service verifies the WebAuthn assertion against Alice's previously-registered credential, confirms the `userVerification` flag is set, and matches the credential to Alice's account identity. The §7.7.1 match relation (case-insensitive email equality) is satisfied by the email associated with the verified credential. The §7.1 invariant survives an agent-key compromise because an attacker who steals the agent key cannot complete the passkey ceremony — the credential refuses to sign for any RP ID other than `claim.example.com`, and the UV gesture demands a fresh biometric or PIN on Alice's registered device.
+
+This ceremony is the recommended pattern for any service whose accounts hold meaningful value. See §12.3 for the assurance-level discussion and AFAP-0001 for the motivation.
 
 ### B.3 Post-claim agent-initiated key rotation
 

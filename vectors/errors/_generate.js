@@ -69,10 +69,7 @@ const VECTORS = [
   { code: 'unsupported_recipient_type',  status: 400, section: '§4.4, §7.2, §11.3',
     description: 'The owner-invitation request specified a recipient `type` that the service did not declare in its discovery `recipient_types`.',
     message: 'Unsupported recipient type' },
-  // Reserved by AFAP-0002. The code is registered with its envelope
-  // shape ahead of the normative §7.5 update so implementations that
-  // adopt the freshness floor can emit it consistently.
-  { code: 'owner_session_too_stale',     status: 403, section: '§7.5 (AFAP-0002), §11.3',
+  { code: 'owner_session_too_stale',     status: 403, section: '§7.5, §11.3',
     description: 'An owner-authenticated session is present but the most recent authentication event predates the service\'s §7.5 freshness window. Distinct from `owner_authentication_required` (no session) and `owner_binding_blocked` (agent-signed).',
     message: 'Owner session is too stale; please re-authenticate' },
 ];

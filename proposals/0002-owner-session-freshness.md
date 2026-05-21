@@ -1,9 +1,11 @@
 # AFAP-0002: Owner-session freshness floor for owner-binding operations
 
-**Status:** Draft
+**Status:** Accepted
 **Author:** Editor
 **Filed:** 2026-05-21
+**Accepted:** 2026-05-21
 **Affects:** `spec/core.md` §7.5, §11.3; `vectors/errors/` (new fixture)
+**Landed in:** §7.5 (freshness paragraph), §11.3 (reserved code listing + distinguishing clause), `vectors/errors/owner_session_too_stale.json`.
 
 ## Summary
 

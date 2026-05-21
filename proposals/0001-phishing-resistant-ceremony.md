@@ -1,9 +1,11 @@
 # AFAP-0001: Phishing-resistant claim ceremony recommendation and WebAuthn interop for the `did` recipient
 
-**Status:** Draft
+**Status:** Accepted
 **Author:** Editor
 **Filed:** 2026-05-21
+**Accepted:** 2026-05-21
 **Affects:** `spec/core.md` §7.4, §7.7.4, §12.3, Appendix B
+**Landed in:** §7.7.4 (WebAuthn ceremony framing), §12.3 (AAL2+ recommendation paragraph), Appendix B.2.2 (passkey worked example), §15.1 ([WebAuthn-L3], [OIDC-MFA] references).
 
 ## Summary
 

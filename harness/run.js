@@ -37,8 +37,7 @@ const REPLAY_DIR = path.join(__dirname, '..', 'vectors', 'replay-window');
 const DISCOVERY_DIR = path.join(__dirname, '..', 'vectors', 'discovery');
 const RECIPIENTS_DIR = path.join(__dirname, '..', 'vectors', 'recipients');
 
-// §11.3 reserved codes, including codes reserved by accepted AFAPs.
-// `owner_session_too_stale` is reserved by AFAP-0002 (draft).
+// §11.3 reserved codes.
 const RESERVED_ERROR_CODES = new Set([
   'invalid_signature', 'expired_signature', 'replayed_nonce',
   'unknown_account', 'revoked_key', 'invalid_attestation',

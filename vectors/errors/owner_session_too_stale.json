@@ -1,7 +1,7 @@
 {
   "name": "owner_session_too_stale",
   "description": "An owner-authenticated session is present but the most recent authentication event predates the service's §7.5 freshness window. Distinct from `owner_authentication_required` (no session) and `owner_binding_blocked` (agent-signed).",
-  "section": "§7.5 (AFAP-0002), §11.3",
+  "section": "§7.5, §11.3",
   "code": "owner_session_too_stale",
   "http_status": 403,
   "envelope": {
