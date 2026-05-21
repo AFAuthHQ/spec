@@ -1,0 +1,25 @@
+{
+  "name": "get-discovery",
+  "description": "GET on a discovery document URL. Demonstrates that AFAuth signatures are not used on /.well-known/afauth (this vector is for harness completeness — the agent does not sign this endpoint in normal use); included to confirm the canonical input for an unsigned-request shape would still validate if produced.",
+  "section": "C.1, C.2",
+  "request": {
+    "method": "GET",
+    "target_uri": "https://api.example.com/.well-known/afauth",
+    "body": null
+  },
+  "content_digest": null,
+  "covered_components": [
+    "@method",
+    "@target-uri"
+  ],
+  "signature_params": {
+    "created": 1715000700,
+    "expires": 1715000760,
+    "nonce": "4a6b8c0d2e4f6a8b",
+    "keyid": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "alg": "ed25519"
+  },
+  "canonical_signature_input": "\"@method\": GET\n\"@target-uri\": https://api.example.com/.well-known/afauth\n\"@signature-params\": (\"@method\" \"@target-uri\");created=1715000700;expires=1715000760;nonce=\"4a6b8c0d2e4f6a8b\";keyid=\"did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr\";alg=\"ed25519\"",
+  "signature_hex": "9a1c3593063778b325b98802983a8015704259e5710cdacd54af84f46b9996eb2e6594164491e134804924c5ab4cd339118c79b7f24765dd74a5ba30f0246d0d",
+  "public_key_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr"
+}

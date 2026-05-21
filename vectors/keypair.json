@@ -1,0 +1,15 @@
+{
+  "_warning": "TEST ONLY — do not use in production. This keypair is derived from a fixed, publicly known seed and provides no security. It exists solely to make AFAuth test vectors reproducible and inspectable.",
+  "_license": "Apache-2.0 (see LICENSE-CODE)",
+  "algorithm": "ed25519",
+  "did_key": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+  "public_key_multibase": "z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+  "public_key_raw_hex": "3ccd241cffc9b3618044b97d036d8614593d8b017c340f1dee8773385517654b",
+  "private_key_raw_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+  "_provenance": {
+    "seed_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+    "multicodec_prefix_hex": "ed01",
+    "multibase_prefix": "z (base58btc)",
+    "_note": "private_key_raw_hex is the Ed25519 32-byte seed used to derive the signing key per RFC 8032 §5.1.5. public_key_raw_hex is the corresponding 32-byte point compression."
+  }
+}

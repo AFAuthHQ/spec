@@ -1,0 +1,26 @@
+{
+  "name": "post-owner-invitation-oidc",
+  "description": "POST owner-invitation with oidc recipient body. Exercises the issuer+sub canonical shape.",
+  "section": "C.1, C.2",
+  "request": {
+    "method": "POST",
+    "target_uri": "https://api.example.com/afauth/v1/accounts/me/owner-invitation",
+    "body": "{\"recipient\":{\"type\":\"oidc\",\"value\":{\"issuer\":\"https://accounts.google.com\",\"sub\":\"103948572345\"}}}"
+  },
+  "content_digest": "sha-256=:xcAqUZ8F0COftOJ+myCM7BkDoPUVMpeJZrvMe+0lQRc=:",
+  "covered_components": [
+    "@method",
+    "@target-uri",
+    "content-digest"
+  ],
+  "signature_params": {
+    "created": 1715000300,
+    "expires": 1715000360,
+    "nonce": "6e8f0a2b4c6d8e0f",
+    "keyid": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "alg": "ed25519"
+  },
+  "canonical_signature_input": "\"@method\": POST\n\"@target-uri\": https://api.example.com/afauth/v1/accounts/me/owner-invitation\n\"content-digest\": sha-256=:xcAqUZ8F0COftOJ+myCM7BkDoPUVMpeJZrvMe+0lQRc=:\n\"@signature-params\": (\"@method\" \"@target-uri\" \"content-digest\");created=1715000300;expires=1715000360;nonce=\"6e8f0a2b4c6d8e0f\";keyid=\"did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr\";alg=\"ed25519\"",
+  "signature_hex": "c90ee722aecebe2fbd847d91cb487c682ad4a7e9d179920a369c13a2f1b5e85beb0670a1621228327715b42c70ebc5096a8c4d618cb432adf8589f6ccfb30104",
+  "public_key_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr"
+}

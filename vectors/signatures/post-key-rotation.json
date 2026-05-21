@@ -1,0 +1,26 @@
+{
+  "name": "post-key-rotation",
+  "description": "POST key-rotation request with new_account_did body. Exercises §8.1 pre-claim rotation.",
+  "section": "C.1, C.2",
+  "request": {
+    "method": "POST",
+    "target_uri": "https://api.example.com/afauth/v1/accounts/me/keys/rotate",
+    "body": "{\"new_account_did\":\"did:key:z6MkrJVnaZkeFzdQyMZu1cF5cgqU3MnVKDx7XfsKnvKzpC9k\"}"
+  },
+  "content_digest": "sha-256=:BncRJnn0b1fqLS8sxkeU3ExC4d0v7gP6d6aRrov8zd8=:",
+  "covered_components": [
+    "@method",
+    "@target-uri",
+    "content-digest"
+  ],
+  "signature_params": {
+    "created": 1715000500,
+    "expires": 1715000560,
+    "nonce": "0c2d4e6f8a0b2c4d",
+    "keyid": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "alg": "ed25519"
+  },
+  "canonical_signature_input": "\"@method\": POST\n\"@target-uri\": https://api.example.com/afauth/v1/accounts/me/keys/rotate\n\"content-digest\": sha-256=:BncRJnn0b1fqLS8sxkeU3ExC4d0v7gP6d6aRrov8zd8=:\n\"@signature-params\": (\"@method\" \"@target-uri\" \"content-digest\");created=1715000500;expires=1715000560;nonce=\"0c2d4e6f8a0b2c4d\";keyid=\"did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr\";alg=\"ed25519\"",
+  "signature_hex": "3b7d8e9400a372571789ad90acd1266b2812609d9019fe0d1bac1e14764c1a0be8b9f693df61f735c658e963e8b648cb74e351b3ea02db2912556c93a8ad990c",
+  "public_key_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr"
+}

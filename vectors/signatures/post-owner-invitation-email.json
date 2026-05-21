@@ -1,0 +1,26 @@
+{
+  "name": "post-owner-invitation-email",
+  "description": "POST owner-invitation with email recipient body. Exercises a POST with content-digest and a typed recipient.",
+  "section": "C.1, C.2",
+  "request": {
+    "method": "POST",
+    "target_uri": "https://api.example.com/afauth/v1/accounts/me/owner-invitation",
+    "body": "{\"recipient\":{\"type\":\"email\",\"value\":\"alice@example.com\"}}"
+  },
+  "content_digest": "sha-256=:VskmB8HOVljZMA6n/O2mWRmTgxwSFRIFGucNNkcDuao=:",
+  "covered_components": [
+    "@method",
+    "@target-uri",
+    "content-digest"
+  ],
+  "signature_params": {
+    "created": 1715000100,
+    "expires": 1715000160,
+    "nonce": "2a4b6c8d0e1f3a5b",
+    "keyid": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "alg": "ed25519"
+  },
+  "canonical_signature_input": "\"@method\": POST\n\"@target-uri\": https://api.example.com/afauth/v1/accounts/me/owner-invitation\n\"content-digest\": sha-256=:VskmB8HOVljZMA6n/O2mWRmTgxwSFRIFGucNNkcDuao=:\n\"@signature-params\": (\"@method\" \"@target-uri\" \"content-digest\");created=1715000100;expires=1715000160;nonce=\"2a4b6c8d0e1f3a5b\";keyid=\"did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr\";alg=\"ed25519\"",
+  "signature_hex": "479913584049dd1ef142bdc10f920648c77856ea94cf7042d30f7f982469db4ccd3846c56b81c2c02018c3776f616af18b6074dd2c29cc87f871d65449754f07",
+  "public_key_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr"
+}

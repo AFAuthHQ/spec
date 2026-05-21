@@ -1,0 +1,25 @@
+{
+  "name": "get-account-introspection",
+  "description": "GET account-introspection request, no body. Exercises a GET signature without content-digest.",
+  "section": "C.1, C.2",
+  "request": {
+    "method": "GET",
+    "target_uri": "https://api.example.com/afauth/v1/accounts/me",
+    "body": null
+  },
+  "content_digest": null,
+  "covered_components": [
+    "@method",
+    "@target-uri"
+  ],
+  "signature_params": {
+    "created": 1715000000,
+    "expires": 1715000060,
+    "nonce": "9f8b3a7c1d2e4f56",
+    "keyid": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "alg": "ed25519"
+  },
+  "canonical_signature_input": "\"@method\": GET\n\"@target-uri\": https://api.example.com/afauth/v1/accounts/me\n\"@signature-params\": (\"@method\" \"@target-uri\");created=1715000000;expires=1715000060;nonce=\"9f8b3a7c1d2e4f56\";keyid=\"did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr\";alg=\"ed25519\"",
+  "signature_hex": "e3543f1d83dfb6926e947ca99e455ed8d2a0b321e6737fec75d3cee1c8b368890cd394173803ba2355bc54a905245f9ec8acaa8b4cb98182668ccd5727d2f10f",
+  "public_key_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr"
+}

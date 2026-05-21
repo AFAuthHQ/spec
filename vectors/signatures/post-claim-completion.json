@@ -1,0 +1,26 @@
+{
+  "name": "post-claim-completion",
+  "description": "POST claim-completion request, signed by the agent. Exercises a service-recipient-side endpoint.",
+  "section": "C.1, C.2",
+  "request": {
+    "method": "POST",
+    "target_uri": "https://api.example.com/afauth/v1/claim/INV_01H1234567890",
+    "body": "{\"token\":\"INV_01H1234567890\"}"
+  },
+  "content_digest": "sha-256=:NXstRdRo4ubL1jyjdYbL2d8ylB+xuy/byNpy5Wzz36E=:",
+  "covered_components": [
+    "@method",
+    "@target-uri",
+    "content-digest"
+  ],
+  "signature_params": {
+    "created": 1715000600,
+    "expires": 1715000660,
+    "nonce": "2e4f6a8b0c2d4e6f",
+    "keyid": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "alg": "ed25519"
+  },
+  "canonical_signature_input": "\"@method\": POST\n\"@target-uri\": https://api.example.com/afauth/v1/claim/INV_01H1234567890\n\"content-digest\": sha-256=:NXstRdRo4ubL1jyjdYbL2d8ylB+xuy/byNpy5Wzz36E=:\n\"@signature-params\": (\"@method\" \"@target-uri\" \"content-digest\");created=1715000600;expires=1715000660;nonce=\"2e4f6a8b0c2d4e6f\";keyid=\"did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr\";alg=\"ed25519\"",
+  "signature_hex": "09324eda85144e922e8d3b4b9a99dfd75da07f90b412c0b7617090e4f13ee047a35eb2cac8dcc8de651aff61cbd2ad98756c323f8716bdafe46327e935939606",
+  "public_key_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr"
+}

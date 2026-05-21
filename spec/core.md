@@ -135,7 +135,7 @@ did:key:<multibase-multicodec-pubkey>
 For Ed25519 keys, the encoded form is the multicodec prefix for Ed25519 (registered varint `0xed01`) followed by the 32-byte raw public key, encoded as a multibase base58btc string. Example:
 
 ```
-did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW
+did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr
 ```
 
 The account DID is derived entirely from the public key. Services MUST validate it locally by decoding the multibase string and using the recovered public key for signature verification; they MUST NOT require any central registry lookup.
@@ -297,7 +297,7 @@ Content-Digest: sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
 Signature-Input: sig1=("@method" "@target-uri" "content-digest");\
                  created=1715000000;expires=1715000060;\
                  nonce="9f8b3a7c1d2e4f56";\
-                 keyid="did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW";\
+                 keyid="did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr";\
                  alg="ed25519"
 Signature: sig1=:0123abcde...:
 
@@ -975,7 +975,7 @@ Content-Digest: sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
 Signature-Input: sig1=("@method" "@target-uri" "content-digest");\
                  created=1715000000;expires=1715000060;\
                  nonce="9f8b3a7c1d2e4f56";\
-                 keyid="did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW";\
+                 keyid="did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr";\
                  alg="ed25519"
 Signature: sig1=:0123abcde...:
 
@@ -1105,10 +1105,10 @@ The rotation is staged but not committed. The service emails Alice a confirmatio
 
 **Status:** Required for v0.1 final. The vectors below are the minimum a v0.1 implementation MUST pass to claim conformance. Their absence today is the protocol's single highest-priority open work item; until they ship, conformance claims are interpretive.
 
-A reference test-only Ed25519 keypair will be published alongside this specification at `../vectors/keypair.json`. The keypair is for protocol testing only and MUST NOT be used in production. The associated `did:key` identifier is:
+A reference test-only Ed25519 keypair is published alongside this specification at [`../vectors/keypair.json`](../vectors/keypair.json). The keypair is for protocol testing only and MUST NOT be used in production. The associated `did:key` identifier is:
 
 ```
-did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW
+did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr
 ```
 
 Vectors cover, at minimum, the following categories.
@@ -1139,7 +1139,7 @@ Sequence vectors illustrating: rejected expired signatures (`expires` in the pas
 
 ### C.7 Distribution
 
-Vectors will be published as machine-readable JSON files under `../vectors/` alongside this specification. Each vector file SHOULD include a `description`, the input under test, the expected output, and a reference to the section of this specification that it exercises. Independent implementations are encouraged to contribute additional vectors via the proposals process.
+Vectors are published as machine-readable JSON files under [`../vectors/`](../vectors/) alongside this specification. Each vector file includes a `description`, the input under test, the expected output, and a reference to the section of this specification that it exercises. A minimum-viable conformance harness lives at [`../harness/run.js`](../harness/run.js); it loads every vector, runs the §C.1 and §C.2 checks against a reference verifier, and exits non-zero on any failure. Independent implementations are encouraged to contribute additional vectors via the proposals process.
 
 ---
 
