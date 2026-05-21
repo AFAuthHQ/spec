@@ -31,6 +31,7 @@ AFAuth ("Agent-First Auth") is an open protocol that lets AI agents sign up to i
 - [Appendix B: Worked Examples](#appendix-b-worked-examples)
 - [Appendix C: Test Vectors](#appendix-c-test-vectors)
 - [Appendix D: Design Rationale](#appendix-d-design-rationale)
+- [Appendix E: Edge Verification Pattern](#appendix-e-edge-verification-pattern)
 
 ---
 
@@ -58,6 +59,7 @@ In addition, this specification uses the following terms:
 - **Account**: A persistent identity on an AFAuth-enabled service, owned by a cryptographic keypair.
 - **Agent**: A software process that holds a private key and interacts with services on its own behalf or on behalf of a human.
 - **Service**: An HTTP(S) endpoint that implements this specification.
+- **Verifier**: The component that performs the verification steps in §5.5 (signature parsing, key resolution, signature verification, timestamp and nonce checks). The verifier MAY be co-located with the service (in-application) or MAY run as a separate component on the request path — for example, an API gateway, edge proxy, or service-mesh sidecar. Where this specification uses "the verifier" it refers to whichever component performs §5.5; where it uses "the service" it refers to the component that defines and enforces account-level policy, including the §7.5 owner-binding floor.
 - **Owner**: A human (or other principal authenticated via email) bound to an account through the claim flow.
 - **Account DID**: The W3C Decentralized Identifier ([W3C-DID-CORE]) that names an account, using the `did:key` method ([W3C-DID-KEY]).
 - **Claim**: The act of binding an account to an owner through the two-step invitation/verification flow defined in Section 7.
@@ -304,7 +306,7 @@ Signature: sig1=:0123abcde...:
 
 ### 5.5 Verification procedure
 
-On receiving a signed request, a service MUST:
+On receiving a signed request, the verifier MUST:
 
 1. Parse the `Signature-Input` header and verify that all required covered components and signature parameters (Section 5.2) are present.
 2. Construct the canonical signature input string per RFC 9421.
@@ -314,11 +316,11 @@ On receiving a signed request, a service MUST:
 6. Verify that the `nonce` has not been seen before for this `keyid` within the storage window (see §5.6).
 7. If the request has a non-empty body, verify the `Content-Digest` header matches a SHA-256 hash of the actual body. If the request has no body, the `Content-Digest` header MUST NOT be present.
 
-If any step fails, the service MUST respond with `401 Unauthorized` and SHOULD include an error body (Section 11) indicating the failure reason.
+If any step fails, the verifier MUST cause a `401 Unauthorized` response with an error body (Section 11) indicating the failure reason. The verifier MAY produce this response directly (when it is on the request path), or signal the failure to the service that produces the response.
 
 ### 5.6 Replay protection
 
-Services MUST maintain a set of seen `(keyid, nonce)` tuples covering at least the duration of the freshness window. The storage window MUST be at least `expires - created + skew_tolerance`. Implementations commonly use a time-bounded set such as Redis with `SETNX … EX`.
+The verifier MUST maintain a set of seen `(keyid, nonce)` tuples covering at least the duration of the freshness window. The storage window MUST be at least `expires - created + skew_tolerance`. Implementations commonly use a time-bounded set such as Redis with `SETNX … EX`. When the verifier is shared across multiple instances — for example, in a clustered gateway — this set MUST be shared across those instances; a per-instance cache is insufficient to defend against cross-instance replay within the freshness window.
 
 Replay defense is scoped to `keyid` (the cryptographic origin) rather than to the account identifier; this preserves correct replay detection across key rotation (§8), where a single account identifier may be presented under successive verification keys.
 
@@ -536,7 +538,7 @@ The protocol defines a single normative constraint on post-claim agent authority
 
 > An operation that modifies which credentials can authenticate as the owner MUST require an owner-authenticated session; the agent key alone MUST NOT authorize such an operation.
 
-This category — termed **owner-binding operations** — includes, at a minimum: changing the bound owner identity, enrolling additional authentication credentials, adding or modifying recovery contacts that authenticate as the owner, linking federated identities, and adding additional principals to the account. The mapping from this category to concrete service operations is service-defined; services MUST classify their own operations against this rule.
+This category — termed **owner-binding operations** — includes, at a minimum: changing the bound owner identity, enrolling additional authentication credentials, adding or modifying recovery contacts that authenticate as the owner, linking federated identities, and adding additional principals to the account. The mapping from this category to concrete service operations is service-defined; services MUST classify their own operations against this rule. This classification is a policy decision and belongs to the service that defines the operation; a verifier that is decoupled from the service (for example, an edge gateway) provides the verified signer identity, but MUST NOT be the sole enforcement point for §7.5.
 
 This constraint preserves the durability of the two-step verify invariant (§7.1) past the moment of binding: revoking a compromised agent key under §8.4 fully restores the owner's sole authentication authority, because no authentication path planted by the agent alone can exist.
 
@@ -1099,14 +1101,43 @@ The rotation is staged but not committed. The service emails Alice a confirmatio
 
 ## Appendix C: Test Vectors
 
-*To be provided in a future revision. Test vectors will include:*
+**Status:** Required for v0.1 final. The vectors below are the minimum a v0.1 implementation MUST pass to claim conformance. Their absence today is the protocol's single highest-priority open work item; until they ship, conformance claims are interpretive.
 
-- Canonical signature input strings for representative requests, with byte-exact reference values.
-- Expected Ed25519 signatures for a published reference keypair (test-only; never use in production).
-- Discovery-document parsing test cases (well-formed, malformed, forward-compatible unknown fields).
-- Error-response shapes for representative failure modes.
+A reference test-only Ed25519 keypair will be published alongside this specification at `../vectors/keypair.json`. The keypair is for protocol testing only and MUST NOT be used in production. The associated `did:key` identifier is:
 
-Submitters of independent implementations are encouraged to contribute test vectors via the proposals process.
+```
+did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSdoom5bxQbCDuJ3LZTW
+```
+
+Vectors cover, at minimum, the following categories.
+
+### C.1 Signature canonical input
+
+For each combination of {`GET`, `POST`} × {empty body, JSON body} × the §5.2 covered components, a canonical signature input string is provided byte-exactly. Implementations MUST reproduce these strings before signing or verifying. This is the category most prone to silent divergence between implementations, and the reason byte-exact reference values are necessary.
+
+### C.2 Reference signatures
+
+For each input in §C.1, the expected Ed25519 signature produced by the reference keypair is provided as a hex string. Verifiers MUST accept the provided signature; signers MUST produce it.
+
+### C.3 Discovery documents
+
+Well-formed v0.1 documents (with and without each optional field), documents containing unknown forward-compatible fields (which MUST be accepted, per §4.2), and documents that violate the schema (which MUST be rejected). Each vector carries its expected parse outcome.
+
+### C.4 Recipient values
+
+A canonical normalised value for each recipient type in §7.7 (`email`, `phone`, `oidc`, `did`), including cases that exercise: NFKC normalisation and case folding (`email`), E.164 normalisation (`phone`), issuer-plus-subject concatenation (`oidc`), and DID canonicalisation including any method-specific normalisation (`did`). Implementations MUST produce the canonical value when normalising an input recipient.
+
+### C.5 Error envelopes
+
+For each reserved code in §11.3, an example error body. Implementations producing the corresponding failure MUST emit a body that matches the example modulo informational fields (free-form `message`, `request_id`, etc.).
+
+### C.6 Replay window
+
+Sequence vectors illustrating: rejected expired signatures (`expires` in the past), rejected future-dated signatures (`created` in the future beyond skew), rejected replays within the window, and accepted nonce reuse across distinct `keyid` values (per §5.6).
+
+### C.7 Distribution
+
+Vectors will be published as machine-readable JSON files under `../vectors/` alongside this specification. Each vector file SHOULD include a `description`, the input under test, the expected output, and a reference to the section of this specification that it exercises. Independent implementations are encouraged to contribute additional vectors via the proposals process.
 
 ---
 
@@ -1141,6 +1172,78 @@ Portable accounts only in v0.1. A `did:web` variant for service-bound accounts m
 ### D.7 Two-step verify as a normative requirement
 
 The two-step verify (Section 7.1) is the protocol's central security primitive and is therefore a MUST, not a SHOULD. Implementations that allow agent-key-alone ownership binding are not conformant. The intent is to make a stolen-key-redirects-email attack impossible at the protocol level rather than relying on implementer diligence.
+
+---
+
+## Appendix E: Edge Verification Pattern
+
+This appendix is **non-normative**. It describes a deployment pattern in which the verifier (§5.5) runs as a separate component on the request path — typically an API gateway, edge proxy, or service-mesh sidecar — rather than inside the application code of the service. The wire format is unchanged. The agent's signing behaviour is unchanged. Only the location of verification differs.
+
+### E.1 Pattern
+
+The verifier intercepts the inbound request, performs §5.5 verification, and on success forwards the request to the service with the verified identity exposed as request headers. The service reads the headers and proceeds with business logic. On verification failure, the verifier produces the `401 Unauthorized` response directly; the service never sees the request.
+
+### E.2 Recommended upstream headers
+
+A verifier deployed as a separate component SHOULD inject the following headers into the request forwarded to the service:
+
+| Header | Value | Required |
+|---|---|---|
+| `X-AFAuth-Account` | The verified account DID (the `keyid` from the signature) | RECOMMENDED |
+| `X-AFAuth-Auth-Mode` | `signature` — distinguishes from a hypothetical future owner-session injection | RECOMMENDED |
+| `X-AFAuth-Verified-At` | RFC 3339 timestamp at which verification succeeded | OPTIONAL |
+
+Standardising the header names lets services swap verifiers (or move between in-app and edge verification) without application-side code changes. The values are not cryptographically signed; the trust model is that the application trusts the verifier across the (typically internal) hop between them.
+
+### E.3 Header stripping (security boundary)
+
+A verifier deployed as a separate component MUST strip any inbound occurrence of the headers it injects (see §E.2) before performing verification. Otherwise an attacker who reaches the verifier can forge identity by setting `X-AFAuth-Account` in the original request. The trust boundary on these headers is "produced by the verifier"; allowing them to pass through from an untrusted source is a critical configuration error.
+
+Services that may also receive requests directly (bypassing the edge verifier) MUST NOT trust these headers on such paths and SHOULD strip them on arrival.
+
+### E.4 Optional service-side key-resolution endpoint
+
+For DID methods whose verification key is fully self-describing (`did:key` per §3.1.1), the verifier resolves keys without any I/O to the service. For methods that require an out-of-band fetch (`did:web` per §3.1.2), the verifier fetches the DID document directly and SHOULD cache the result.
+
+A service MAY additionally expose a private endpoint that returns its canonical view of an account's current verification key and status, for use by verifiers that need to consult the service's revocation list (§8.3) without independently mirroring it. A recommended shape:
+
+```http
+GET /internal/afauth/keys/{accountDid} HTTP/1.1
+Host: <service host>
+
+200 OK
+Content-Type: application/json
+
+{
+  "account_did":       "did:key:z6Mk...",
+  "state":             "CLAIMED",
+  "verification_keys": [
+    {
+      "public_key_multibase": "z6Mk...",
+      "active_since":         "2026-05-19T08:14:00Z"
+    }
+  ],
+  "revoked":           false
+}
+
+410 Gone     — when the account's keys are revoked (per §8.3)
+404 Not Found — when the account is unknown to the service
+```
+
+This endpoint is not part of the public AFAuth wire surface; it is an implementation-internal contract between a service and its co-deployed verifier(s). Its URL, authentication, and exact response shape are service-defined; the shape above is offered as a convention to ease portability of verifier implementations across services.
+
+### E.5 Verifier–service split
+
+The verifier provides the verified signer identity; the service provides policy and state. In particular:
+
+- §7.5 owner-binding classification (which operations require an owner session) is a policy decision and is enforced by the service. See §7.5.
+- §6.1 account state (`UNCLAIMED`, `INVITED`, `CLAIMED`) is owned by the service.
+- §8.3 revocation lists are maintained by the service; verifiers consult them either by mirroring the list or by querying the endpoint of §E.4.
+- §11 error codes are emitted by whichever component produces the response; both the verifier and the service emit codes from the §11 vocabulary for the conditions they detect.
+
+### E.6 Conformance
+
+A verifier that runs the steps in §5.5 against the test vectors of Appendix C and produces the same accept/reject outcomes as a reference in-application verifier is conformant with respect to verification. Conformance against the full service-role probes in `conformance.md` requires a complete service deployment; a verifier alone cannot claim service-role conformance.
 
 ---
 
