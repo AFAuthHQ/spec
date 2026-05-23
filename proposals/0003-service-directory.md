@@ -134,10 +134,22 @@ Consequences:
 ### D.4 Listing protocol
 
 A service controller submits a listing by making an **AFAuth-signed**
-HTTP request to the directory, using the same HTTP Message Signatures
-scheme (`core.md` §5) the service uses with agents. This avoids a
-parallel auth system (no GitHub OAuth, no DNS TXT challenge file) and
-re-uses authority the service already has.
+HTTP request to the directory, using the HTTP Message Signatures scheme
+defined in `core.md` §5. For `did:web` listings, the directory resolves
+the signing key by fetching `/.well-known/did.json` over HTTPS — the
+same TLS+DNS anchor used by ACME, GitHub Pages, Maven Central, and the
+MCP registry to bind submissions to domain control. For `did:key`
+listings, the signing key is the identifier (the same pattern as
+did:plc) and signed submission is the only available anchor. The
+signature on top of either path provides freshness and request-body
+integrity, not the trust anchor itself.
+
+This implies that v0.1 services that wish to list must hold the private
+key for at least one verification method in their DID document and have
+tooling to sign HTTP requests with it. Per `core.md` §3.1.2 this is
+already the meaning of "controller" for `did:web`, but the v0.1
+reference Worker does not exercise this capability today; the `afauth`
+CLI's signing helpers are the supported path for the first release.
 
 ```http
 POST /registry/v1/listings HTTP/1.1
@@ -322,6 +334,16 @@ own responses are protected by TLS. A future version MAY have the
 directory sign its responses with a directory-DID; out of scope for
 this AFAP.
 
+**First-registration hijack.** For `did:web` listings, the trust the
+directory places in the submission rests on a single TLS+DNS fetch of
+`/.well-known/did.json` at registration time. A BGP or DNS hijack
+targeting that specific fetch could let an attacker register a listing
+under a domain they do not control. ACME's response to the equivalent
+threat is multi-perspective issuance corroboration (MPIC) — verifying
+from several network vantage points. The canonical directory MAY adopt
+MPIC for first-registration DID resolution; this is tracked as future
+hardening and is not required for v0.
+
 **No collection of agent-side data.** The directory holds records
 about *services*, not agents or accounts. No telemetry from agents
 flows through the directory.
@@ -362,6 +384,26 @@ architectural signal).
   extend on evidence beats a speculative v0 we have to maintain
   speculatively. Each deferred item is named in §D.5, §D.6, §D.7,
   and §D.8 with a clear add-back path.
+
+- **Pure DNS-TXT or HTTP-well-known challenge with no signed request**
+  (ACME-style: publish a token, directory verifies, listing is created
+  without an accompanying signature). Considered. Rejected: works
+  cleanly for `did:web` but has no anchor for `did:key`, where the
+  signing key is the identifier. The chosen scheme already obtains the
+  TLS+DNS anchor for `did:web` via DID resolution (`/.well-known/did.json`)
+  and adds freshness + body integrity on top — so it is not a parallel
+  system to a well-known challenge but a superset of it. A pure-challenge
+  flow would also require a second mechanism for ongoing operations
+  (PATCH, DELETE, re-list), which the signed scheme handles uniformly.
+
+- **OAuth-on-a-code-host** (e.g., GitHub OAuth, as MCP currently uses
+  for `io.github.*` namespaces). Considered. Rejected as the primary
+  mechanism: couples the registry's threat model to the code host
+  (a compromised GitHub account compromises every listing under it),
+  breaks for private-network and non-GitHub deployments, and the
+  active MCP-registry redesign (issue #264) is moving away from this
+  binding toward signed assertions. May exist as an opt-in convenience
+  layer in a future AFAP, never as the only path.
 
 - **`directory` field in the discovery document** that points the
   agent at a known registry. Rejected. Couples the protocol to the
