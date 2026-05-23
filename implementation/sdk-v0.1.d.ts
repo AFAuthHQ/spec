@@ -317,6 +317,8 @@ declare module '@afauthhq/server' {
   export interface Account {
     did: Did;
     state: AccountState;
+    /** ISO-8601 timestamp the account was first materialised (§6.4/§6.5). */
+    createdAt: string;
     pendingRecipient?: Recipient;
     owner?: { identity: Recipient; userId: string; claimedAt: string };
     revoked?: boolean;
@@ -377,12 +379,58 @@ declare module '@afauthhq/server' {
   }
 
   /**
+   * Optional extension of `AccountStore` for stores that can enumerate
+   * un-terminal accounts and transition them to `EXPIRED`. Required by
+   * `sweepExpiredAccounts`; not required by the rest of the SDK.
+   * Backends that cannot list (opaque KV with no index) may skip this
+   * and enforce the §6.1 / Appendix A TTL transition via storage-layer
+   * mechanisms instead — KV `expirationTtl` on each row, for example.
+   *
+   * Both built-in stores implement this: `MemoryAccountStore`
+   * (`@afauthhq/server`) and `D1AccountStore` (`@afauthhq/worker`).
+   */
+  export interface SweepableAccountStore extends AccountStore {
+    /** Enumerate every account in `UNCLAIMED` or `INVITED` state. */
+    listOpenAccounts(): Promise<Account[]>;
+    /**
+     * Transition the account to `EXPIRED`. Idempotent — calling on an
+     * already-EXPIRED account is a no-op. Calling on a `CLAIMED` or
+     * unknown account throws (the spec forbids CLAIMED → EXPIRED).
+     */
+    expire(did: Did, expiredAt: string): Promise<Account>;
+  }
+
+  /**
+   * §6.1 / Appendix A TTL sweep. Transitions UNCLAIMED / INVITED
+   * accounts to `EXPIRED` once they exceed `unclaimedTtlSeconds` from
+   * their `createdAt`. Spec-mandated transition; the SDK does not run
+   * it automatically because *when* to sweep is service policy. Call
+   * from a scheduled trigger (cron / Workers scheduled trigger /
+   * Lambda EventBridge rule). Idempotent and concurrency-safe — each
+   * `expire()` is atomic at the storage layer.
+   */
+  export function sweepExpiredAccounts(
+    store: SweepableAccountStore,
+    opts: {
+      /** From discovery's `limits.unclaimed_ttl_seconds` (§4.4). */
+      unclaimedTtlSeconds: number;
+      /** Overridable for tests; defaults to `() => new Date()`. */
+      now?: () => Date;
+    },
+  ): Promise<{
+    /** DIDs transitioned to EXPIRED in this run. */
+    expired: Did[];
+    /** Total accounts considered (UNCLAIMED + INVITED). */
+    scanned: number;
+  }>;
+
+  /**
    * In-memory `AccountStore` implementation. Suitable for tests and
    * the reference Worker. Maintains an O(1) reverse index from DID to
    * pending-invitation token so §7.3 atomic supersession is constant
    * time instead of scanning all tokens.
    */
-  export class MemoryAccountStore implements AccountStore {
+  export class MemoryAccountStore implements SweepableAccountStore {
     get(did: Did): Promise<Account | null>;
     findByPendingToken(token: string): Promise<Account | null>;
     createUnclaimed(did: Did): Promise<Account>;
@@ -394,6 +442,8 @@ declare module '@afauthhq/server' {
     ): Promise<Account | null>;
     rotateKey(oldDid: Did, newDid: Did, rotatedAt: string): Promise<Account>;
     revoke(did: Did, revokedAt: string): Promise<Account>;
+    listOpenAccounts(): Promise<Account[]>;
+    expire(did: Did, expiredAt: string): Promise<Account>;
   }
 
   // ---------- Recipient handlers (§7.7) ----------
@@ -667,13 +717,16 @@ declare module '@afauthhq/server' {
 // ============================================================
 declare module '@afauthhq/worker' {
   import type {
-    ServerOptions,
+    Account,
+    Did,
     NonceStore,
     OwnerSession,
     RateLimitConfig,
     RateLimitDecision,
     RateLimiter,
     RevocationList,
+    ServerOptions,
+    SweepableAccountStore,
   } from '@afauthhq/server';
 
   export interface WorkerOptions extends ServerOptions {
@@ -721,8 +774,14 @@ declare module '@afauthhq/worker' {
    * `packages/worker/migrations/0001_init.sql`; apply via
    * `wrangler d1 migrations apply <db-name>` before first use.
    * Every atomic op uses D1's `batch()` for a transactional grouping.
+   *
+   * Implements `SweepableAccountStore` — `listOpenAccounts` enumerates
+   * UNCLAIMED + INVITED rows in `created_at` order; `expire` flips the
+   * row to EXPIRED and drops any pending invitation in a single batch.
    */
-  export class D1AccountStore {
+  export class D1AccountStore implements SweepableAccountStore {
     constructor(db: D1Database);
+    listOpenAccounts(): Promise<Account[]>;
+    expire(did: Did, expiredAt: string): Promise<Account>;
   }
 }
