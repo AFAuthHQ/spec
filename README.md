@@ -32,13 +32,13 @@ This repository is the normative specification.
 - **TypeScript SDKs**: [`github.com/AFAuthHQ/typescript-sdk`](https://github.com/AFAuthHQ/typescript-sdk).
   Published to npm under [`@afauthhq`](https://www.npmjs.com/org/afauthhq):
   ```
-  npm i @afauthhq/agent@alpha     # client / agent
-  npm i @afauthhq/server@alpha    # service handlers + Verifier
-  npm i @afauthhq/worker@alpha    # Cloudflare Workers bindings
-  npm i @afauthhq/core@alpha      # primitives shared by the above
+  npm i @afauthhq/agent     # client / agent
+  npm i @afauthhq/server    # service handlers + Verifier
+  npm i @afauthhq/worker    # Cloudflare Workers bindings
+  npm i @afauthhq/core      # primitives shared by the above
   ```
 
-Both reference implementations track the v0.1 spec; the first published release is `0.1.0-alpha.0`.
+Both reference implementations track the v0.1 spec and are published at `0.1.0` (TypeScript SDK on npm under `@afauthhq/*`, CLI as binaries + Homebrew tap).
 
 Alternative implementations are welcome. The protocol is intentionally small and language-agnostic.
 
