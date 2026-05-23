@@ -1,4 +1,4 @@
-# AFAP-0002: Non-normative service directory at afauth.org
+# AFAP-0003: Non-normative service directory at afauth.org
 
 **Status:** Draft
 **Author:** Editor
@@ -15,9 +15,8 @@ adopters; it imposes no requirements on either agents or services and
 introduces no new fields on the `/.well-known/afauth` document.
 
 Membership is **opt-in**, **self-serve via the protocol's own signature
-scheme**, **publicly downloadable in bulk**, and **independent of
-conformance**: a listing means a service has claimed AFAuth support, not
-that it has been audited.
+scheme**, and **independent of conformance**: a listing means a service
+has claimed AFAuth support, not that it has been audited.
 
 This AFAP is **informational**, in IETF terms — `spec/core.md` does not
 change. It defines a community convention that the protocol's ecosystem
@@ -74,14 +73,7 @@ Each listing is a JSON object with the following shape:
   "tags":            ["productivity", "storage"],
   "title":           "Example Photo Storage",
   "description":     "AFAuth-supported photo storage for agents.",
-  "conformance": {
-    "harness_version":  "0.1.0",
-    "last_run":         "2026-05-23T14:00:00Z",
-    "vectors_passing":  78,
-    "vectors_total":    78,
-    "report_url":       "https://afauth.org/registry/conformance/did:web:api.example.com/2026-05-23.json"
-  },
-  "_meta": { }
+  "_meta":           { }
 }
 ```
 
@@ -91,19 +83,26 @@ The full JSON Schema is provided alongside this AFAP at
 **Required fields:** `service_did`, `discovery_url`, `discovery_doc`,
 `fetched_at`, `first_listed_at`, `status`.
 
+**`discovery_doc`** is a cached snapshot taken at `fetched_at`.
+Consumers that need to act on `endpoints`, `billing`, or
+`accepted_attestors` (rather than merely display the listing) SHOULD
+re-fetch the live `/.well-known/afauth` document from `discovery_url`
+before doing so; the cached copy may lag the live document by up to
+the directory's revalidation interval.
+
 **`status`** is one of:
 - `active` — discovery doc fetched successfully on the last probe and
   validates against `schemas/well-known.json`.
-- `stale` — last probe failed or the discovery doc no longer validates;
-  retained for downstream mirror convergence.
+- `stale` — recent probes failed or the discovery doc no longer
+  validates; retained for downstream mirror convergence.
 - `deleted` — the controller of `service_did` requested removal.
   Retained (soft-delete) so mirrors converge.
 
-**`_meta`** is a free-form, reverse-DNS-namespaced object for
-non-normative annotations (security scan results, third-party ratings,
-editorial notes). Borrowed from MCP's pattern. Members under
-`afauth.org/...` keys are reserved for the canonical directory; mirrors
-and aggregators MUST use their own DNS-anchored prefix.
+**`_meta`** is a free-form object reserved for future extensions.
+Federation conventions for `_meta` (namespacing, third-party
+annotations, scan results) are deliberately not specified in this
+version and will be defined in a follow-up AFAP if and when there are
+aggregators that need them.
 
 ### D.3 Identity model
 
@@ -146,7 +145,7 @@ Host: afauth.org
 Content-Type: application/json
 Signature-Input: sig1=("@method" "@target-uri" "content-digest");
                  created=1748005200;expires=1748005500;nonce="...";
-                 keyid="did:web:api.example.com#key-1";alg="ed25519"
+                 keyid="did:web:api.example.com";alg="ed25519"
 Signature: sig1=:...:
 
 {
@@ -159,22 +158,29 @@ Signature: sig1=:...:
 
 The directory:
 
-1. Resolves `keyid`'s DID document.
+1. Resolves the DID in `keyid` (per `core.md` §5.2, `keyid` is the bare
+   DID with no fragment).
 2. Verifies the request signature against the resolved key.
 3. Fetches `discovery_url` independently and validates against
    `schemas/well-known.json`.
-4. Confirms that `discovery_doc.service_did` matches the DID derived
-   from `keyid`.
+4. Confirms that `discovery_doc.service_did` equals `keyid`.
 5. On success, creates or updates the listing.
 
 Removal and metadata updates use the same signed-request scheme
 (`PATCH /registry/v1/listings/{service_did}`,
 `DELETE /registry/v1/listings/{service_did}`).
 
-The directory MUST honour signed key-rotation events: after a
-controller publishes a new verification method in their DID document
-(or rotates a `did:key` via `endpoints.key_rotation`), subsequent
-signed requests against the rotated key MUST be accepted.
+The directory MUST honour signed key-rotation events. For `did:web`
+listings, after the controller publishes a new verification method in
+their DID document, subsequent signed requests against the rotated key
+MUST be accepted; the directory re-resolves the DID document on
+signature verification (`core.md` §3.1.2). `did:key` listings have no
+in-place rotation, because the verification key is the identifier
+(`core.md` §3.1.1, §8.1): rotating the key produces a new
+`service_did` and therefore a new listing. The controller SHOULD
+`DELETE` the old listing before `POST`ing a fresh one under the new
+DID so consumers see a clean transition; `service_did` continuity
+across `did:key` rotation is not provided.
 
 ### D.5 Read API
 
@@ -185,147 +191,71 @@ and rate-limited only against abuse.
 |---|---|
 | `GET /registry/v1/listings` | Cursor-paginated list. Query params: `cursor`, `limit` (≤100), `search`, `tag`, `updated_since` (RFC 3339), `status`, `include_deleted`. |
 | `GET /registry/v1/listings/{service_did}` | Single listing. |
-| `GET /registry/v1/listings/{service_did}/history` | Past discovery-doc snapshots. |
-| `GET /registry/v1/dump.json` | **Full dataset, single response.** No pagination. |
-| `GET /registry/v1/dump.json.gz` | Gzipped equivalent. |
-| `GET /registry/v1/snapshots/{YYYY-MM-DD}.json.gz` | Daily snapshot, immutable. |
-| `GET /registry/v1/openapi.yaml` | The OpenAPI 3.1 description of this surface. |
 
-The **bulk-dump endpoints are the first-class consumption pattern,**
-not the paginated list. Aggregators, mirrors, and offline tools are
-expected to download `dump.json.gz` daily and apply deltas via
-`updated_since`. This corrects MCP's most-cited operational pain point
-(forced pagination of ~8 k entries with 20–25 s tail latency).
-
-Snapshots are content-addressable by date; once published, a snapshot
-URL is immutable. This allows mirrors to verify they hold the same
-data the canonical directory served on a given day without trusting
-the directory's `updated_since` stream.
+Two endpoints is deliberately the entire v0 surface. Bulk-dump,
+snapshot, history, and OpenAPI endpoints are non-breaking additions
+that may be introduced in a follow-up AFAP once a consumer pattern
+exists that the paginated list cannot serve; at the expected v0
+scale (tens of listings), the paginated list is sufficient for
+mirrors and aggregators that poll with `updated_since`.
 
 ### D.6 Conformance probes
 
-The directory MAY run the `spec/harness/` test vectors against each
-listed service on a regular cadence and publish results in the
-listing's `conformance` block. Conformance status is **advisory** —
-listing eligibility does not depend on it. A service that fails some
-vectors remains listed with `vectors_passing < vectors_total`; this is
-deliberately distinct from `status: stale` (which means the discovery
-doc itself didn't fetch or validate).
+Active conformance probing against listed services — running test
+vectors, publishing per-listing pass/fail results, the directory
+acting as a signing AFAuth agent (`did:web:afauth.org`), and the
+attendant rate budget — is **out of scope for this AFAP** and is
+tracked separately. The directory's only liveness signal in this
+version is the discovery-document revalidation defined in §D.7.
 
-Probe artefacts are published at the URL given in
-`conformance.report_url` so consumers can verify the result
-independently.
-
-#### D.6.1 Probe identity
-
-The canonical directory has its own AFAuth identity,
-`did:web:afauth.org`, with a DID document served at
-`https://afauth.org/.well-known/did.json`. The directory uses this
-identity to interact with listed services symmetrically — it
-participates in the protocol it indexes.
-
-- **Probes against public well-known endpoints** (GET
-  `/.well-known/afauth`, GET `/.well-known/did.json`) are
-  unauthenticated and carry
-  `User-Agent: AFAuth-Registry-Probe/<version> (+https://afauth.org/registry/probe)`.
-- **Probes that exercise authenticated endpoints** (harness vectors
-  that POST signed requests per `core.md` §5) are signed by
-  `did:web:afauth.org`. From the service's perspective, the directory
-  is a regular AFAuth agent; signed probes produce an `UNCLAIMED`
-  account whose `account_did` is derived from the directory's keys —
-  the test artefact the harness already expects.
-- **Outbound IP range** for the canonical directory is published at
-  `https://afauth.org/registry/probe/ips.json` so operators who want
-  stronger filtering than `User-Agent` matching may allowlist
-  accordingly.
-
-#### D.6.2 Rate budget
-
-The canonical directory publishes its probe rate budget at
-`https://afauth.org/registry/probe`. RECOMMENDED defaults:
-
-- At most **1 discovery-doc revalidation per listing per 24 hours**.
-- At most **1 full-harness run per listing per 7 days**.
-
-Mirrors that probe independently SHOULD publish equivalent budgets
-and SHOULD coordinate with the canonical directory's outbound schedule
-where feasible to avoid duplicate load on service operators.
+When conformance probing is added in a future AFAP, the listing
+record (§D.2) gains a `conformance` block; existing fields are
+unchanged.
 
 ### D.7 Revalidation and soft-delete
 
 The directory periodically (RECOMMENDED daily) re-fetches each
-listing's `discovery_url`. On failure, the listing transitions to
-`stale`. After a controller-configurable grace period (RECOMMENDED 30
-days), the directory MAY transition `stale` listings to `deleted`.
+listing's `discovery_url`. A listing transitions to `stale` only after
+**at least three consecutive revalidation failures** — a single
+network blip or transient 5xx MUST NOT flip a healthy listing. After
+a controller-configurable grace period (RECOMMENDED 30 days from the
+first failure in the run that drove the listing to `stale`), the
+directory MAY transition `stale` listings to `deleted`.
 
-`deleted` records persist in the dump with `status: "deleted"` so
+`deleted` records persist in the list response with
+`status: "deleted"` (returned only when `include_deleted=true`) so
 mirrors converge. Hard-erase is reserved for unlawful content.
 
-#### D.7.1 Per-listing history retention
-
-Each successful revalidation produces a snapshot of the listing's
-discovery document. The canonical directory retains the **last 12
-successful snapshots per listing** (≈12 months at the recommended
-daily cadence); older snapshots are discarded.
-
-A controller may purge all per-listing history except the current
-snapshot by submitting a signed request (same auth as D.4):
-
-```http
-POST /registry/v1/listings/{service_did}/history/purge
-```
-
-Daily registry snapshots already published under
-`/registry/v1/snapshots/` were public when issued and are not
-retracted by per-listing purge.
-
-#### D.7.2 Registry snapshot retention
-
-Daily snapshots (`/registry/v1/snapshots/{YYYY-MM-DD}.json.gz`) are
-retained for **90 days**. Monthly aggregates derived from the daily
-snapshots are retained for **24 months** to support ecosystem
-analysis. Older aggregates MAY be discarded or moved to cold storage
-at the operator's discretion.
-
-#### D.7.3 Privacy-sensitive fields
-
-The discovery document is already public, but historical retention
-turns transient configuration into a durable record. Fields most
-likely to carry business signal — notably `billing.accepted_attestors`
-and the set of declared `features` — are documented at the operator
-commitment page (D.9.1) so service operators understand what they are
-publishing into history when they list.
+The directory retains only the **current** `discovery_doc` snapshot
+per listing in this version. Per-listing history, history-purge,
+registry-wide daily snapshots, and snapshot-retention policy are
+out of scope and may be added by a follow-up AFAP.
 
 ### D.8 Federation
 
 The directory **is not the protocol's single source of truth.** Anyone
-may host a directory implementing the same OpenAPI; agents and
+may host a directory implementing the same surface; agents and
 aggregators may consume any directory or several. The schema lives in
 `spec/schemas/listing.json` and is versioned alongside the spec.
 
 Recommended federation patterns:
 
-- **Mirrors**: clone `dump.json.gz` daily; serve identical content
-  under their own domain. The daily snapshot URLs let mirrors prove
-  they hold the canonical data.
+- **Mirrors**: clone the canonical dataset by polling
+  `GET /registry/v1/listings` with `updated_since`, and serve
+  identical content under their own domain.
 - **Aggregators**: combine the canonical directory with their own
-  curation, scan results, or editorial annotations under
-  `_meta["<their-domain>/..."]`.
+  curation, scan results, or editorial annotations. Conventions for
+  representing third-party annotations on a listing are not specified
+  in this version (see §D.2 `_meta`).
 - **Private directories**: enterprises with internal-only AFAuth
   services run their own directory, never publishing to
   `afauth.org`. The same schema and signed-submission protocol apply.
 
 ### D.9 Operator and governance
 
-The canonical directory is operated under a **phased handoff** model
-designed to avoid the open-ended single-operator dependency that has
-been the most cited governance risk for analogous registries (see
-References).
-
-#### D.9.1 Phase 0 — initial launch
-
-AFAuthHQ operates `afauth.org/registry` directly. A public operator
-commitment at `https://afauth.org/registry/operator` documents:
+AFAuthHQ operates `afauth.org/registry` in this version. A public
+operator commitment at `https://afauth.org/registry/operator`
+documents:
 
 - Who has operational authority.
 - The actions the operator MAY take unilaterally (routine moderation
@@ -335,44 +265,13 @@ commitment at `https://afauth.org/registry/operator` documents:
   service outside the published moderation policy, breaking-change
   schema amendments, censoring listings on ideological grounds).
 
-#### D.9.2 Phase 1 — Directory Steering Committee
-
-Phase 1 is triggered when **either** of the following becomes true,
-whichever occurs first:
-
-- **Adoption threshold:** ≥50 listed services controlled by ≥10
-  distinct organisations.
-- **Time threshold:** 12 months have elapsed since Phase 0 launch.
-
-At the trigger, a Directory Steering Committee is seated:
-
-- At least three maintainers from organisations unaffiliated with
-  AFAuthHQ.
-- AFAuthHQ retains at most one committee seat.
-- The committee adopts the OpenAPI surface and `listing.json` schema
-  as the change-controlled contract; subsequent schema or API changes
-  require committee approval.
-- The committee assumes responsibility for the moderation policy
-  (D.10) and the operator commitment (D.9.1).
-
-#### D.9.3 Phase 2 — neutral home
-
-When the directory reaches roughly 200 listed services or 24 months
-post-launch, the Steering Committee evaluates donation of the
-directory to a neutral standards organisation (e.g., OpenWallet
-Foundation, Linux Foundation Networking, or an IETF working-group
-home if AFAuth itself standardises there). This phase is contingent
-on adoption; this AFAP does not commit to a specific destination.
-
-#### D.9.4 Independent mirrors from day one
-
-The structural lever that reduces the importance of the canonical
-operator is **mirror diversity.** AFAuthHQ commits to encouraging at
-least one independent mirror of the directory at Phase 0 launch and
-to maintaining schema parity such that downstream mirrors can serve
-the canonical dataset without modification. If the canonical directory
-becomes unreachable or makes a contested moderation decision, a mirror
-is the answer — not a fork of the protocol.
+The schema and signed-submission protocol are public; anyone may
+mirror, fork, or run a private directory (see §D.8). Governance
+evolution — a steering committee, donation to a neutral standards
+home, multi-operator co-stewardship — will be addressed in a
+follow-up AFAP once adoption warrants it. This AFAP does not commit
+the project to a specific governance trajectory in advance of that
+evidence.
 
 ### D.10 Take-down policy
 
@@ -383,8 +282,9 @@ the canonical directory do not bind mirrors or aggregators, which set
 their own policies.
 
 A service controller may withdraw a listing at any time by signing a
-`DELETE` request (D.4). Removals propagate via `dump.json.gz` and
-`updated_since`.
+`DELETE` request (D.4). Withdrawn listings appear in
+`GET /registry/v1/listings?include_deleted=true&updated_since=…` with
+`status: "deleted"` so mirrors converge.
 
 ## Compatibility
 
@@ -412,7 +312,7 @@ look-alike host). The directory MUST re-validate that
 every submission and re-probe; mismatches reject. Controllers with
 rotated keys can re-claim listings via the §8 key-rotation flow.
 
-**Listing as a tracking vector.** The directory's bulk-dump endpoint
+**Listing as a tracking vector.** The directory's list endpoint
 exposes every listed service. Services that do not wish to be in a
 public directory simply do not list themselves; the well-known
 mechanism continues to work for unlisted services.
@@ -426,10 +326,13 @@ this AFAP.
 about *services*, not agents or accounts. No telemetry from agents
 flows through the directory.
 
-**Privacy of `discovery_doc` snapshots.** The directory caches a copy
-of each service's discovery document. Services that wish to rotate
-endpoint URLs or attestor lists SHOULD assume cached snapshots remain
-visible in the directory's history for the snapshot retention period.
+**Privacy of `discovery_doc` snapshots.** The directory caches the
+current copy of each service's discovery document. In this version
+only the current snapshot is retained per listing; if per-listing
+history is added in a future AFAP, services should reassess what they
+publish into the discovery document (notably `billing.accepted_attestors`,
+`features`, and `endpoints` URLs, which can carry business or
+architectural signal).
 
 ## Alternatives considered
 
@@ -444,13 +347,21 @@ visible in the directory's history for the snapshot retention period.
 
 - **MCP-style hosted registry, modeled exactly on
   `registry.modelcontextprotocol.io`.** Considered. Rejected as a
-  literal copy for three reasons: (1) AFAuth has DIDs, so reverse-DNS
-  namespacing is redundant; (2) MCP has no bulk-dump endpoint and
-  pagination has become an operational pain point; (3) MCP's
-  namespace-auth-only model is weaker than AFAuth's signed-submission
-  model. This AFAP keeps MCP's good ideas (soft-delete, `_meta`
-  federation, OpenAPI as the federation contract, `updated_since`
-  delta) and corrects the known weak points.
+  literal copy for two reasons: (1) AFAuth has DIDs, so reverse-DNS
+  namespacing is redundant; (2) MCP's namespace-auth-only model is
+  weaker than AFAuth's signed-submission model. This AFAP keeps
+  MCP's soft-delete and `updated_since` patterns and replaces the
+  identity model with DID-anchored signed submission.
+
+- **Shipping bulk-dump, snapshots, per-listing history, OpenAPI, and
+  conformance probes in v0.** Considered. Rejected: each is a
+  non-breaking addition (new endpoint or optional field) with no
+  current consumer. The registry will see tens, not thousands, of
+  listings in its first phase; paginated list with `updated_since`
+  serves every known v0 use case. A small, robust v0 that we can
+  extend on evidence beats a speculative v0 we have to maintain
+  speculatively. Each deferred item is named in §D.5, §D.6, §D.7,
+  and §D.8 with a clear add-back path.
 
 - **`directory` field in the discovery document** that points the
   agent at a known registry. Rejected. Couples the protocol to the
@@ -464,8 +375,8 @@ visible in the directory's history for the snapshot retention period.
 
 - **Commercial / for-profit registry.** Considered. Rejected for the
   canonical operator role; bias incentives undermine the trust the
-  directory needs. Commercial aggregators on top of the public dump
-  are welcome.
+  directory needs. Commercial aggregators on top of the public
+  listings endpoint are welcome.
 
 ## References
 
