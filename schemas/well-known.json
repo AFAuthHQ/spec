@@ -69,6 +69,25 @@
           "items": { "type": "string" }
         }
       }
+    },
+    "x402": {
+      "type": "object",
+      "description": "Opt-in advertisement of x402 (HTTP 402) payment acceptance. See AFAP-0004.",
+      "required": ["facilitator", "networks", "assets", "payment_endpoint"],
+      "properties": {
+        "facilitator":      { "type": "string", "format": "uri" },
+        "networks":         {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$" }
+        },
+        "assets":           {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "payment_endpoint": { "type": "string", "format": "uri" }
+      }
     }
   }
 }
