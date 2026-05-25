@@ -107,12 +107,12 @@ aggregators that need them.
 ### D.3 Identity model
 
 A listing is **bound to the `service_did` already declared in the
-discovery document.** Per `core.md` §4.3 (as tightened by AFAP-0005),
-`service_did` is a `did:web` identifier; this directory therefore
-keys listings by `did:web` and rejects any other DID method on
-submission. AFAuth's existing DID model is the only namespace the
-directory needs; reverse-DNS namespacing (as in MCP) is not adopted
-because it would parallel the DID layer without adding security.
+discovery document.** AFAuth's existing DID model is the only
+namespace the directory needs; reverse-DNS namespacing (as in MCP)
+is not adopted because it would parallel the DID layer without
+adding security. Authentication of a listing is host-based (D.4) and
+therefore independent of DID method: `did:web` and `did:key`
+`service_did` values are accepted on equal terms.
 
 Consequences:
 
@@ -120,63 +120,186 @@ Consequences:
   `host` — the same anchor used elsewhere in the protocol. Claiming
   `did:web:acme.example.com` requires control of `acme.example.com`,
   full stop.
+- A `did:key:` listing's authority is anchored, like every listing,
+  in control of the discovery host (D.4). The `did:key` identifier
+  itself carries no domain anchor (`core.md` §4.3): a consumer
+  browsing the listing cannot infer the operating organisation from
+  the DID alone. Browse interfaces presenting listings MUST render
+  `did:key:` entries with a visible "no domain anchor" indicator
+  and prominently display the host derived from `discovery_url`.
 - Conflicts cannot arise: two services cannot legitimately claim the
   same `service_did`, because the DID resolves to at most one key set.
 
 ### D.4 Listing protocol
 
-A service controller submits a listing by making an **AFAuth-signed**
-HTTP request to the directory, using the HTTP Message Signatures scheme
-defined in `core.md` §5. The directory resolves the signing key by
-fetching `/.well-known/did.json` over HTTPS — the same TLS+DNS anchor
-used by ACME, GitHub Pages, Maven Central, and the MCP registry to
-bind submissions to domain control. The signature on top of that path
-provides freshness and request-body integrity, not the trust anchor
-itself.
+The directory authenticates a controller through **proof of control
+of the discovery host**. The scheme is a two-step well-known
+challenge: the directory issues a one-time token, the controller
+publishes it at a known path on the host serving `discovery_url`,
+and the directory verifies by independent HTTPS fetch. After
+verification the directory issues a short-lived **session token**
+that authenticates subsequent operations on the same listing.
 
-This implies that v0.1 services that wish to list must hold the private
-key for at least one verification method in their DID document and have
-tooling to sign HTTP requests with it. Per `core.md` §3.1.2 this is
-already the meaning of "controller" for `did:web`, but the v0.1
-reference Worker does not exercise this capability today; the `afauth`
-CLI's signing helpers are the supported path for the first release.
+This is the same trust anchor — DNS + TLS for the discovery host —
+that ACME (HTTP-01), GitHub Pages, the MCP registry's HTTP
+authentication mode, and the AFAuth discovery mechanism itself rely
+on. No new identity primitive is introduced; the controller's
+authority derives entirely from operating the host whose
+`/.well-known/afauth` document declares the service.
+
+#### D.4.1 Initial registration
+
+To register a new listing, the controller performs three steps:
+
+**1. Request a challenge.**
+
+```http
+POST /registry/v1/listings/challenge HTTP/1.1
+Host: afauth.org
+Content-Type: application/json
+
+{ "discovery_url": "https://api.example.com/.well-known/afauth" }
+```
+
+The directory returns a challenge token bound to the discovery host
+derived from `discovery_url`:
+
+```http
+200 OK
+Content-Type: application/json
+
+{
+  "challenge_token": "ch_01HXYZ...",
+  "proof_url":       "https://api.example.com/.well-known/afauth-registry-proof",
+  "expires_at":      "2026-05-25T15:30:00Z"
+}
+```
+
+Challenge tokens MUST contain at least 128 bits of entropy from a
+cryptographically secure source. They MUST expire within 30 minutes
+of issuance and MUST be single-use. The challenge request is
+unauthenticated; rate limiting is the only abuse control at this
+step (anyone may *request* a challenge for any host, but only the
+host's controller can *satisfy* one).
+
+**2. Publish the proof.**
+
+The controller publishes the challenge token at `proof_url`. The
+response MUST be HTTP 200, `Content-Type: text/plain`, with the
+response body containing the bare token (no surrounding JSON, no
+trailing newline, no whitespace).
+
+**3. Submit the listing.**
 
 ```http
 POST /registry/v1/listings HTTP/1.1
 Host: afauth.org
 Content-Type: application/json
-Signature-Input: sig1=("@method" "@target-uri" "content-digest");
-                 created=1748005200;expires=1748005500;nonce="...";
-                 keyid="did:web:api.example.com";alg="ed25519"
-Signature: sig1=:...:
 
 {
-  "discovery_url": "https://api.example.com/.well-known/afauth",
-  "title":         "Example Photo Storage",
-  "description":   "AFAuth-supported photo storage for agents.",
-  "tags":          ["productivity", "storage"]
+  "discovery_url":   "https://api.example.com/.well-known/afauth",
+  "challenge_token": "ch_01HXYZ...",
+  "title":           "Example Photo Storage",
+  "description":     "AFAuth-supported photo storage for agents.",
+  "tags":            ["productivity", "storage"]
 }
 ```
 
-The directory:
+The directory then:
 
-1. Resolves the DID in `keyid` (per `core.md` §5.2, `keyid` is the bare
-   DID with no fragment).
-2. Verifies the request signature against the resolved key.
-3. Fetches `discovery_url` independently and validates against
-   `schemas/well-known.json`.
-4. Confirms that `discovery_doc.service_did` equals `keyid`.
-5. On success, creates or updates the listing.
+1. Verifies the challenge token is valid, unexpired, unused, and
+   bound to the host derived from the submitted `discovery_url`.
+2. Fetches `proof_url` over HTTPS (validating the TLS certificate
+   against the public CA bundle) and confirms the response body
+   equals the challenge token byte-for-byte.
+3. Fetches `discovery_url` over HTTPS and validates the response
+   against `schemas/well-known.json`.
+4. Marks the challenge token as consumed.
+5. On success, creates the listing and returns a **session token**:
 
-Removal and metadata updates use the same signed-request scheme
-(`PATCH /registry/v1/listings/{service_did}`,
-`DELETE /registry/v1/listings/{service_did}`).
+```http
+201 Created
+Content-Type: application/json
 
-The directory MUST honour signed key-rotation events. After the
-controller publishes a new verification method in their DID document,
-subsequent signed requests against the rotated key MUST be accepted;
-the directory re-resolves the DID document on signature verification
-(`core.md` §3.1.2).
+{
+  "service_did":   "did:web:api.example.com",
+  "session_token": "sess_01HABC...",
+  "expires_at":    "2026-06-01T15:30:00Z"
+}
+```
+
+Session tokens are bearer credentials scoped to a single
+`service_did`. They MUST contain at least 128 bits of entropy and
+MUST expire within 7 days of issuance. The controller MAY remove
+the proof file from `proof_url` once the session token has been
+issued; the directory does not re-validate the proof except at
+initial registration and on re-challenge (D.4.3).
+
+#### D.4.2 Update and removal
+
+`PATCH /registry/v1/listings/{service_did}` and
+`DELETE /registry/v1/listings/{service_did}` are authenticated with
+the session token in an HTTP `Authorization: Bearer` header:
+
+```http
+PATCH /registry/v1/listings/did:web:api.example.com HTTP/1.1
+Host: afauth.org
+Authorization: Bearer sess_01HABC...
+Content-Type: application/json
+
+{ "tags": ["productivity", "storage", "photos"] }
+```
+
+The directory MUST reject a session token whose bound `service_did`
+does not match the path parameter, and MUST reject expired or
+revoked tokens with HTTP 401.
+
+The `PATCH` body MAY include any subset of the writeable listing
+fields (`title`, `description`, `tags`). The `service_did` and
+`discovery_url` fields are not writeable through `PATCH`; a service
+whose discovery host changes must `DELETE` the existing listing and
+re-register.
+
+#### D.4.3 Re-challenge on session expiry or recovery
+
+When a session token expires, or when the controller has lost it, a
+new session is obtained by repeating D.4.1 against the same
+`discovery_url`. On a successful re-challenge for an existing
+listing:
+
+- The directory issues a fresh session token bound to the same
+  `service_did`.
+- The directory MUST revoke any prior session tokens for that
+  listing. This is the recovery path for a compromised session
+  token: regaining host control regains the listing.
+
+The discovery-document revalidation flow (D.7) is independent of
+session tokens: the directory periodically re-fetches each
+listing's `discovery_url` regardless of whether any session is
+active. A controller whose session token has expired need not
+refresh it unless they intend to mutate the listing.
+
+#### D.4.4 Why no signed requests
+
+The directory deliberately does not require the controller to sign
+requests with the service's DID key. In v0.1, an AFAuth service
+publishes `/.well-known/afauth` but is **not** required to publish a
+DID document at `/.well-known/did.json` — `core.md` §3.1.2 governs
+DID resolution for *account* DIDs that services accept, not for the
+service's own `service_did`, which is declarative in v0.1.
+Observation: representative v0.1 deployments (e.g.,
+`https://artidrop.ai/.well-known/afauth` declares
+`service_did: "did:web:artidrop.ai"`, while
+`https://artidrop.ai/.well-known/did.json` returns 404) confirm that
+the controller key the DID nominally resolves to is, in practice,
+not published.
+
+A signed-submission scheme would therefore have introduced a new
+prerequisite on services that wish to list — standing up DID-document
+publication, generating and storing a controller key, and
+integrating outbound HTTP Message Signature generation — none of
+which the protocol otherwise demands. The challenge scheme requires
+only what the controller already operates: the discovery host.
 
 ### D.5 Read API
 
@@ -294,19 +417,24 @@ protocol conformance.
 
 ## Security and privacy considerations
 
-**Squatting and impersonation.** Because listings are bound to
-`service_did` and the directory verifies a fresh signature from the
-DID's current key against an independently-fetched discovery
-document, a third party cannot list a service they do not control.
-This is a strict improvement over MCP's reverse-DNS + GitHub OAuth
-model, which conflates code-host identity with service authority.
+**Squatting and impersonation.** Because the directory verifies
+proof of control of the discovery host (D.4.1) before listing, and
+re-validates that `discovery_doc.service_did` matches the listing's
+`service_did` on every probe, a third party cannot list a service
+whose discovery host they do not control. Authority derives from
+the same TLS+DNS anchor MCP's HTTP-authentication mode uses, with
+no entanglement with code-host identity (as in MCP's GitHub-OAuth
+mode, which conflates GitHub account compromise with service
+authority).
 
-**Stale or hostile listings.** A controller whose keys are compromised
-can submit hostile listings (e.g., redirecting `discovery_url` to a
-look-alike host). The directory MUST re-validate that
-`discovery_doc.service_did` matches the listing's `service_did` on
-every submission and re-probe; mismatches reject. Controllers with
-rotated keys can re-claim listings via the §8 key-rotation flow.
+**Stale or hostile listings.** A controller whose discovery host is
+compromised can submit hostile listings (e.g., redirecting
+`discovery_url` to a look-alike host). The directory MUST
+re-validate that `discovery_doc.service_did` matches the listing's
+`service_did` on every submission and re-probe; mismatches reject.
+A controller who has recovered host control re-claims a hostile
+listing by re-challenging (D.4.3), which issues a fresh session
+token and revokes all prior session tokens for that listing.
 
 **Listing as a tracking vector.** The directory's list endpoint
 exposes every listed service. Services that do not wish to be in a
@@ -318,15 +446,26 @@ own responses are protected by TLS. A future version MAY have the
 directory sign its responses with a directory-DID; out of scope for
 this AFAP.
 
-**First-registration hijack.** The trust the directory places in the
-submission rests on a single TLS+DNS fetch of `/.well-known/did.json`
-at registration time. A BGP or DNS hijack targeting that specific
-fetch could let an attacker register a listing under a domain they do
-not control. ACME's response to the equivalent threat is
-multi-perspective issuance corroboration (MPIC) — verifying from
-several network vantage points. The canonical directory MAY adopt MPIC
-for first-registration DID resolution; this is tracked as future
-hardening and is not required for v0.
+**First-registration hijack.** The trust the directory places in
+the submission rests on two TLS+DNS fetches at registration time:
+one to `proof_url` on the discovery host (verifying the challenge
+token), one to `discovery_url` (validating the document). A BGP or
+DNS hijack targeting both fetches could let an attacker register a
+listing under a host they do not control. ACME's response to the
+equivalent threat is multi-perspective issuance corroboration
+(MPIC) — verifying from several network vantage points. The
+canonical directory MAY adopt MPIC for first-registration proof
+verification; this is tracked as future hardening and is not
+required for v0.
+
+**Session-token leakage.** Session tokens are bearer credentials.
+A leaked token gives the attacker full control of one listing for
+up to 7 days (the maximum lifetime defined in D.4.1). Mitigations:
+short token lifetime, per-listing scope (a stolen token cannot
+attack any other service), and instantaneous recovery via
+re-challenge (D.4.3), which revokes the stolen token. Operators
+SHOULD store session tokens with the same care as other deployment
+secrets (no commits to source control, no log emission).
 
 **No collection of agent-side data.** The directory holds records
 about *services*, not agents or accounts. No telemetry from agents
@@ -369,27 +508,27 @@ architectural signal).
   speculatively. Each deferred item is named in §D.5, §D.6, §D.7,
   and §D.8 with a clear add-back path.
 
-- **Pure DNS-TXT or HTTP-well-known challenge with no signed request**
-  (ACME-style: publish a token, directory verifies, listing is created
-  without an accompanying signature). Considered. Rejected: the chosen
-  scheme already obtains the TLS+DNS anchor via DID resolution
-  (`/.well-known/did.json`) and adds freshness + body integrity on top
-  — so it is not a parallel system to a well-known challenge but a
-  superset of it. A pure-challenge flow would also require a second
-  mechanism for ongoing operations (PATCH, DELETE, re-list), which the
-  signed scheme handles uniformly.
-
-- **Accept `did:key` `service_did` listings in addition to `did:web`.**
-  Considered in an earlier draft. Rejected after AFAP-0005, which
-  restricts `service_did` to `did:web` at the protocol level. Keeping
-  `did:key` listings in the directory would have required a special
-  "no domain anchor" UI indicator, a separate identity-anchor argument,
-  and a special "no in-place rotation" caveat in §D.4 — all to support
-  a usage pattern `core.md` itself no longer permits. Removing it
-  collapses the identity model to a single uniform anchor (DNS+TLS)
-  and lets every listing benefit from the §3.1.2 in-place rotation
-  flow. Account identifiers are unaffected and may continue to use
-  `did:key` per `core.md` §3.1.
+- **HMS-signed submission** (the controller signs every request to
+  the directory with the service's DID-controller key, per
+  `core.md` §5; an earlier draft of this AFAP took this approach).
+  Considered. Rejected: in v0.1, AFAuth services publish
+  `/.well-known/afauth` but are not required to publish
+  `/.well-known/did.json`, and observed deployments do not (e.g.,
+  `artidrop.ai` declares `service_did: "did:web:artidrop.ai"` while
+  `https://artidrop.ai/.well-known/did.json` returns 404). HMS-signed
+  submission would therefore have introduced a new prerequisite on
+  services that wish to list — standing up DID-document publication,
+  generating and storing a controller key, and integrating outbound
+  HTTP Message Signature generation — none of which the protocol
+  otherwise demands. The challenge scheme requires only the
+  infrastructure the controller already operates. The body-integrity
+  and replay-resistance properties HMS would have added are
+  recovered partially (TLS for the channel, short-lived
+  single-binding session tokens for mutations) and the remaining
+  gap (cryptographic body integrity for `title`, `description`,
+  `tags`) is judged acceptable given that the security-critical
+  fields (`service_did`, `discovery_url`, `discovery_doc`) are
+  independently re-fetched by the directory.
 
 - **OAuth-on-a-code-host** (e.g., GitHub OAuth, as MCP currently uses
   for `io.github.*` namespaces). Considered. Rejected as the primary
@@ -426,8 +565,5 @@ architectural signal).
 - **MCP moderation policy**:
   `modelcontextprotocol.io/registry/moderation-policy`.
 - §1.3, §4, §5, §8 of [`core.md`](../spec/core.md).
-- AFAP-0005: Restrict `service_did` to `did:web` —
-  [`0005-service-did-web-only.md`](0005-service-did-web-only.md).
 - [RFC 8615] Well-Known URIs.
-- [RFC 9421] HTTP Message Signatures.
 - [W3C-DID-WEB] DID method `did:web`.

@@ -1,9 +1,45 @@
 # AFAP-0005: Restrict `service_did` to `did:web`
 
-**Status:** Draft
+**Status:** Withdrawn
 **Author:** Editor
 **Filed:** 2026-05-25
-**Affects:** `spec/core.md` §4.3; `spec/schemas/well-known.json`; AFAP-0003 §D.3, §D.4 (consequential edits)
+**Withdrawn:** 2026-05-25
+**Affects:** None (withdrawn before acceptance)
+
+## Withdrawal note
+
+This proposal is withdrawn. The motivation for tightening
+`service_did` to `did:web` rested on the premise that `did:web`
+provided a meaningfully stronger identity than `did:key` for
+*service* identifiers — specifically, an anchor in DNS+TLS via DID
+resolution of `/.well-known/did.json`.
+
+That premise does not hold in v0.1. `core.md` §3.1.2 governs DID
+resolution for *account* DIDs that services accept, not for the
+service's own `service_did`. No part of the protocol resolves the
+service's DID. Observation of representative v0.1 deployments
+confirms the gap: `artidrop.ai` declares
+`service_did: "did:web:artidrop.ai"` while
+`https://artidrop.ai/.well-known/did.json` returns HTTP 404. The
+declared DID has no published verification method; the difference
+between `did:web` and `did:key` for `service_did` is, in v0.1,
+cosmetic.
+
+Tightening a decorative field is unjustified spec churn. If a
+future AFAP makes `service_did` load-bearing — for example by
+requiring the discovery document itself to be signed by the
+service's DID, as §12.8 of `core.md` flags as future work — the
+question of which DID methods to permit for that field should be
+revisited then, against the actual security properties the new
+mechanism depends on.
+
+AFAP-0003's reframed §D.4 (challenge-based registration, no
+DID-key signing required) makes the `did:web` vs `did:key`
+distinction operationally irrelevant for directory registration:
+authentication is host-based and works identically for either
+method.
+
+This file is preserved as a record of the design discussion.
 
 ## Summary
 
