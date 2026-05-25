@@ -107,8 +107,11 @@ aggregators that need them.
 ### D.3 Identity model
 
 A listing is **bound to the `service_did` already declared in the
-discovery document.** AFAuth's existing DID model is the only namespace
-the directory needs; reverse-DNS namespacing (as in MCP) is not adopted
+discovery document.** Per `core.md` §4.3 (as tightened by AFAP-0005),
+`service_did` is a `did:web` identifier; this directory therefore
+keys listings by `did:web` and rejects any other DID method on
+submission. AFAuth's existing DID model is the only namespace the
+directory needs; reverse-DNS namespacing (as in MCP) is not adopted
 because it would parallel the DID layer without adding security.
 
 Consequences:
@@ -117,17 +120,6 @@ Consequences:
   `host` — the same anchor used elsewhere in the protocol. Claiming
   `did:web:acme.example.com` requires control of `acme.example.com`,
   full stop.
-- Listings keyed by `did:key:` are accepted without restriction. The
-  signed-submission protocol (D.4) is sufficient: an attacker
-  attempting to impersonate `did:key:zA` needs either the controller's
-  private key or control of the host serving the discovery document —
-  the same threat surface that protects `did:web` listings. The UX
-  difference remains: `did:key` carries no domain anchor
-  (`core.md` §4.3), so a consumer browsing a listing cannot infer the
-  operating organisation from the DID alone. Browse interfaces
-  presenting listings MUST render `did:key:` entries with a visible
-  "no domain anchor" indicator and prominently display the host
-  derived from `discovery_url`.
 - Conflicts cannot arise: two services cannot legitimately claim the
   same `service_did`, because the DID resolves to at most one key set.
 
@@ -135,14 +127,12 @@ Consequences:
 
 A service controller submits a listing by making an **AFAuth-signed**
 HTTP request to the directory, using the HTTP Message Signatures scheme
-defined in `core.md` §5. For `did:web` listings, the directory resolves
-the signing key by fetching `/.well-known/did.json` over HTTPS — the
-same TLS+DNS anchor used by ACME, GitHub Pages, Maven Central, and the
-MCP registry to bind submissions to domain control. For `did:key`
-listings, the signing key is the identifier (the same pattern as
-did:plc) and signed submission is the only available anchor. The
-signature on top of either path provides freshness and request-body
-integrity, not the trust anchor itself.
+defined in `core.md` §5. The directory resolves the signing key by
+fetching `/.well-known/did.json` over HTTPS — the same TLS+DNS anchor
+used by ACME, GitHub Pages, Maven Central, and the MCP registry to
+bind submissions to domain control. The signature on top of that path
+provides freshness and request-body integrity, not the trust anchor
+itself.
 
 This implies that v0.1 services that wish to list must hold the private
 key for at least one verification method in their DID document and have
@@ -182,17 +172,11 @@ Removal and metadata updates use the same signed-request scheme
 (`PATCH /registry/v1/listings/{service_did}`,
 `DELETE /registry/v1/listings/{service_did}`).
 
-The directory MUST honour signed key-rotation events. For `did:web`
-listings, after the controller publishes a new verification method in
-their DID document, subsequent signed requests against the rotated key
-MUST be accepted; the directory re-resolves the DID document on
-signature verification (`core.md` §3.1.2). `did:key` listings have no
-in-place rotation, because the verification key is the identifier
-(`core.md` §3.1.1, §8.1): rotating the key produces a new
-`service_did` and therefore a new listing. The controller SHOULD
-`DELETE` the old listing before `POST`ing a fresh one under the new
-DID so consumers see a clean transition; `service_did` continuity
-across `did:key` rotation is not provided.
+The directory MUST honour signed key-rotation events. After the
+controller publishes a new verification method in their DID document,
+subsequent signed requests against the rotated key MUST be accepted;
+the directory re-resolves the DID document on signature verification
+(`core.md` §3.1.2).
 
 ### D.5 Read API
 
@@ -334,14 +318,14 @@ own responses are protected by TLS. A future version MAY have the
 directory sign its responses with a directory-DID; out of scope for
 this AFAP.
 
-**First-registration hijack.** For `did:web` listings, the trust the
-directory places in the submission rests on a single TLS+DNS fetch of
-`/.well-known/did.json` at registration time. A BGP or DNS hijack
-targeting that specific fetch could let an attacker register a listing
-under a domain they do not control. ACME's response to the equivalent
-threat is multi-perspective issuance corroboration (MPIC) — verifying
-from several network vantage points. The canonical directory MAY adopt
-MPIC for first-registration DID resolution; this is tracked as future
+**First-registration hijack.** The trust the directory places in the
+submission rests on a single TLS+DNS fetch of `/.well-known/did.json`
+at registration time. A BGP or DNS hijack targeting that specific
+fetch could let an attacker register a listing under a domain they do
+not control. ACME's response to the equivalent threat is
+multi-perspective issuance corroboration (MPIC) — verifying from
+several network vantage points. The canonical directory MAY adopt MPIC
+for first-registration DID resolution; this is tracked as future
 hardening and is not required for v0.
 
 **No collection of agent-side data.** The directory holds records
@@ -387,14 +371,25 @@ architectural signal).
 
 - **Pure DNS-TXT or HTTP-well-known challenge with no signed request**
   (ACME-style: publish a token, directory verifies, listing is created
-  without an accompanying signature). Considered. Rejected: works
-  cleanly for `did:web` but has no anchor for `did:key`, where the
-  signing key is the identifier. The chosen scheme already obtains the
-  TLS+DNS anchor for `did:web` via DID resolution (`/.well-known/did.json`)
-  and adds freshness + body integrity on top — so it is not a parallel
-  system to a well-known challenge but a superset of it. A pure-challenge
-  flow would also require a second mechanism for ongoing operations
-  (PATCH, DELETE, re-list), which the signed scheme handles uniformly.
+  without an accompanying signature). Considered. Rejected: the chosen
+  scheme already obtains the TLS+DNS anchor via DID resolution
+  (`/.well-known/did.json`) and adds freshness + body integrity on top
+  — so it is not a parallel system to a well-known challenge but a
+  superset of it. A pure-challenge flow would also require a second
+  mechanism for ongoing operations (PATCH, DELETE, re-list), which the
+  signed scheme handles uniformly.
+
+- **Accept `did:key` `service_did` listings in addition to `did:web`.**
+  Considered in an earlier draft. Rejected after AFAP-0005, which
+  restricts `service_did` to `did:web` at the protocol level. Keeping
+  `did:key` listings in the directory would have required a special
+  "no domain anchor" UI indicator, a separate identity-anchor argument,
+  and a special "no in-place rotation" caveat in §D.4 — all to support
+  a usage pattern `core.md` itself no longer permits. Removing it
+  collapses the identity model to a single uniform anchor (DNS+TLS)
+  and lets every listing benefit from the §3.1.2 in-place rotation
+  flow. Account identifiers are unaffected and may continue to use
+  `did:key` per `core.md` §3.1.
 
 - **OAuth-on-a-code-host** (e.g., GitHub OAuth, as MCP currently uses
   for `io.github.*` namespaces). Considered. Rejected as the primary
@@ -431,6 +426,8 @@ architectural signal).
 - **MCP moderation policy**:
   `modelcontextprotocol.io/registry/moderation-policy`.
 - §1.3, §4, §5, §8 of [`core.md`](../spec/core.md).
+- AFAP-0005: Restrict `service_did` to `did:web` —
+  [`0005-service-did-web-only.md`](0005-service-did-web-only.md).
 - [RFC 8615] Well-Known URIs.
 - [RFC 9421] HTTP Message Signatures.
 - [W3C-DID-WEB] DID method `did:web`.
