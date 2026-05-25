@@ -10,7 +10,7 @@
 
 Define a non-normative public **service directory** — a list of services
 that have voluntarily announced AFAuth support — operated at
-`https://afauth.org/registry` and mirrorable by anyone. The directory's
+`https://registry.afauth.org` and mirrorable by anyone. The directory's
 sole purpose is announcement and cold-start discovery for early
 adopters; it imposes no requirements on either agents or services and
 introduces no new fields on the `/.well-known/afauth` document.
@@ -161,8 +161,8 @@ To register a new listing, the controller performs three steps:
 **1. Request a challenge.**
 
 ```http
-POST /registry/v1/listings/challenge HTTP/1.1
-Host: afauth.org
+POST /v1/listings/challenge HTTP/1.1
+Host: registry.afauth.org
 Content-Type: application/json
 
 { "discovery_url": "https://api.example.com/.well-known/afauth" }
@@ -199,8 +199,8 @@ trailing newline, no whitespace).
 **3. Submit the listing.**
 
 ```http
-POST /registry/v1/listings HTTP/1.1
-Host: afauth.org
+POST /v1/listings HTTP/1.1
+Host: registry.afauth.org
 Content-Type: application/json
 
 {
@@ -244,13 +244,13 @@ initial registration and on re-challenge (D.4.3).
 
 #### D.4.2 Update and removal
 
-`PATCH /registry/v1/listings/{service_did}` and
-`DELETE /registry/v1/listings/{service_did}` are authenticated with
+`PATCH /v1/listings/{service_did}` and
+`DELETE /v1/listings/{service_did}` are authenticated with
 the session token in an HTTP `Authorization: Bearer` header:
 
 ```http
-PATCH /registry/v1/listings/did:web:api.example.com HTTP/1.1
-Host: afauth.org
+PATCH /v1/listings/did:web:api.example.com HTTP/1.1
+Host: registry.afauth.org
 Authorization: Bearer sess_01HABC...
 Content-Type: application/json
 
@@ -321,8 +321,8 @@ and rate-limited only against abuse.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /registry/v1/listings` | Cursor-paginated list. Query params: `cursor`, `limit` (≤100), `search`, `tag`, `updated_since` (RFC 3339), `status`, `include_deleted`. |
-| `GET /registry/v1/listings/{service_did}` | Single listing. |
+| `GET /v1/listings` | Cursor-paginated list. Query params: `cursor`, `limit` (≤100), `search`, `tag`, `updated_since` (RFC 3339), `status`, `include_deleted`. |
+| `GET /v1/listings/{service_did}` | Single listing. |
 
 The `cursor` value is opaque to clients: it MUST be treated as a
 server-issued continuation token and submitted unmodified in the
@@ -378,7 +378,7 @@ aggregators may consume any directory or several. The schema lives in
 Recommended federation patterns:
 
 - **Mirrors**: clone the canonical dataset by polling
-  `GET /registry/v1/listings` with `updated_since`, and serve
+  `GET /v1/listings` with `updated_since`, and serve
   identical content under their own domain.
 - **Aggregators**: combine the canonical directory with their own
   curation, scan results, or editorial annotations. Conventions for
@@ -390,8 +390,8 @@ Recommended federation patterns:
 
 ### D.9 Operator and governance
 
-AFAuthHQ operates `afauth.org/registry` in this version. A public
-operator commitment at `https://afauth.org/registry/operator`
+AFAuthHQ operates `registry.afauth.org` in this version. A public
+operator commitment at `https://registry.afauth.org/operator`
 documents:
 
 - Who has operational authority.
@@ -414,13 +414,13 @@ evidence.
 
 The canonical directory's take-down policy (illegal content, malware,
 spam, fraudulent claims) is published at
-`https://afauth.org/registry/policy`. Operational decisions made by
+`https://registry.afauth.org/policy`. Operational decisions made by
 the canonical directory do not bind mirrors or aggregators, which set
 their own policies.
 
 A service controller may withdraw a listing at any time by signing a
 `DELETE` request (D.4). Withdrawn listings appear in
-`GET /registry/v1/listings?include_deleted=true&updated_since=…` with
+`GET /v1/listings?include_deleted=true&updated_since=…` with
 `status: "deleted"` so mirrors converge.
 
 ## Compatibility

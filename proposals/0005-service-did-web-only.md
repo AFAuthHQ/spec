@@ -205,7 +205,7 @@ permitting more values would have prevented.
 - **Restrict only in the canonical directory.** Considered in the
   drafting of this AFAP. Rejected: a stricter directory policy than
   the protocol leaves the underlying footgun in place for any
-  consumer outside `afauth.org/registry`, and creates a "directory
+  consumer outside `registry.afauth.org`, and creates a "directory
   rejects, protocol permits" asymmetry that complicates the AFAP-0003
   story without removing the root cause.
 
