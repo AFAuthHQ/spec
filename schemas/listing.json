@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://afauth.org/schemas/listing.json",
+  "title": "AFAuth service directory listing",
+  "description": "Schema for a single listing record in the non-normative AFAuth service directory. Informational; see spec/directory.md and AFAP-0003.",
+  "type": "object",
+  "required": [
+    "service_did",
+    "discovery_url",
+    "discovery_doc",
+    "fetched_at",
+    "first_listed_at",
+    "status"
+  ],
+  "properties": {
+    "service_did": {
+      "type": "string",
+      "description": "The service's DID, matching the value declared in the cached discovery_doc. Both did:web and did:key are accepted on equal terms (see spec/directory.md §3).",
+      "pattern": "^did:(web|key):.+"
+    },
+    "discovery_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL of the /.well-known/afauth document the listing describes. MUST be an https:// URL."
+    },
+    "discovery_doc": {
+      "$ref": "well-known.json",
+      "description": "Cached snapshot of /.well-known/afauth taken at fetched_at. Validates against schemas/well-known.json."
+    },
+    "fetched_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp of the most recent successful discovery_doc fetch."
+    },
+    "first_listed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp of initial registration."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "stale", "deleted"],
+      "description": "Listing status. See spec/directory.md §7 for transitions."
+    },
+    "tags": {
+      "type": "array",
+      "description": "Free-form classification tags supplied by the controller. The directory imposes no tag vocabulary in this version.",
+      "items": { "type": "string" }
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable service name supplied by the controller."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable service description supplied by the controller."
+    },
+    "_meta": {
+      "type": "object",
+      "description": "Reserved for future extensions. Federation conventions for namespacing and third-party annotations are deliberately unspecified in this version."
+    }
+  }
+}

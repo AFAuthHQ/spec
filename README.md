@@ -14,7 +14,9 @@ This repository is the normative specification.
 
 - [`spec/core.md`](spec/core.md) — the protocol specification
 - [`spec/conformance.md`](spec/conformance.md) — conformance criteria for agent and service roles
+- [`spec/directory.md`](spec/directory.md) — informational: non-normative service-directory convention (AFAP-0003)
 - [`schemas/well-known.json`](schemas/well-known.json) — JSON Schema for the `/.well-known/afauth` discovery document
+- [`schemas/listing.json`](schemas/listing.json) — JSON Schema for service-directory listings (informational, AFAP-0003)
 - [`vectors/`](vectors/) — Appendix C test vectors:
     - [`signatures/`](vectors/signatures/) (§C.1, §C.2 — canonical input + reference signatures)
     - [`discovery/`](vectors/discovery/) (§C.3 — well-formed / forward-compat / malformed discovery docs)

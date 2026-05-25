@@ -1,8 +1,9 @@
 # AFAP-0003: Non-normative service directory at afauth.org
 
-**Status:** Draft
+**Status:** Accepted
 **Author:** Editor
 **Filed:** 2026-05-23
+**Accepted:** 2026-05-25
 **Affects:** No changes to `spec/core.md`. Adds `spec/directory.md` (informational) and `spec/schemas/listing.json`.
 
 ## Summary
@@ -147,6 +148,12 @@ on. No new identity primitive is introduced; the controller's
 authority derives entirely from operating the host whose
 `/.well-known/afauth` document declares the service.
 
+The proof path `/.well-known/afauth-registry-proof` (D.4.1 step 2)
+is an unregistered well-known URI scoped to directory participants.
+It is not proposed for IANA registration in this version; the path
+is part of the directory convention, not the AFAuth core
+specification.
+
 #### D.4.1 Initial registration
 
 To register a new listing, the controller performs three steps:
@@ -260,6 +267,12 @@ fields (`title`, `description`, `tags`). The `service_did` and
 whose discovery host changes must `DELETE` the existing listing and
 re-register.
 
+`DELETE` is a soft-delete: the directory transitions the listing's
+`status` to `deleted` and retains the record so mirrors converge
+(see D.7 and D.10). The directory MUST NOT hard-erase listings
+through this endpoint; hard-erase is reserved for unlawful content
+and is governed by the operator's take-down policy (D.10).
+
 #### D.4.3 Re-challenge on session expiry or recovery
 
 When a session token expires, or when the controller has lost it, a
@@ -310,6 +323,11 @@ and rate-limited only against abuse.
 |---|---|
 | `GET /registry/v1/listings` | Cursor-paginated list. Query params: `cursor`, `limit` (≤100), `search`, `tag`, `updated_since` (RFC 3339), `status`, `include_deleted`. |
 | `GET /registry/v1/listings/{service_did}` | Single listing. |
+
+The `cursor` value is opaque to clients: it MUST be treated as a
+server-issued continuation token and submitted unmodified in the
+next request. Its internal encoding is unspecified and MAY change
+between directory versions without notice.
 
 Two endpoints is deliberately the entire v0 surface. Bulk-dump,
 snapshot, history, and OpenAPI endpoints are non-breaking additions
@@ -508,26 +526,19 @@ architectural signal).
   speculatively. Each deferred item is named in §D.5, §D.6, §D.7,
   and §D.8 with a clear add-back path.
 
-- **HMS-signed submission** (the controller signs every request to
-  the directory with the service's DID-controller key, per
-  `core.md` §5; an earlier draft of this AFAP took this approach).
-  Considered. Rejected: in v0.1, AFAuth services publish
-  `/.well-known/afauth` but are not required to publish
-  `/.well-known/did.json`, and observed deployments do not (e.g.,
-  `artidrop.ai` declares `service_did: "did:web:artidrop.ai"` while
-  `https://artidrop.ai/.well-known/did.json` returns 404). HMS-signed
-  submission would therefore have introduced a new prerequisite on
-  services that wish to list — standing up DID-document publication,
-  generating and storing a controller key, and integrating outbound
-  HTTP Message Signature generation — none of which the protocol
-  otherwise demands. The challenge scheme requires only the
-  infrastructure the controller already operates. The body-integrity
-  and replay-resistance properties HMS would have added are
-  recovered partially (TLS for the channel, short-lived
-  single-binding session tokens for mutations) and the remaining
-  gap (cryptographic body integrity for `title`, `description`,
-  `tags`) is judged acceptable given that the security-critical
-  fields (`service_did`, `discovery_url`, `discovery_doc`) are
+- **HMS-signed submission** (controller signs every directory
+  request with the service's DID-controller key, per `core.md` §5;
+  an earlier draft took this approach). Rejected for the reasons
+  given in §D.4.4: v0.1 services are not required to publish
+  `/.well-known/did.json`, and observed deployments do not, so
+  signed submission would impose a prerequisite the protocol does
+  not otherwise demand. The body-integrity and replay-resistance
+  properties HMS would have added are recovered partially (TLS for
+  the channel, short-lived per-listing session tokens for
+  mutations); the residual gap (cryptographic body integrity for
+  the writeable display fields `title`, `description`, `tags`) is
+  judged acceptable because the security-critical fields
+  (`service_did`, `discovery_url`, `discovery_doc`) are
   independently re-fetched by the directory.
 
 - **OAuth-on-a-code-host** (e.g., GitHub OAuth, as MCP currently uses
