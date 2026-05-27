@@ -3,7 +3,9 @@
 **Status:** Draft
 **Author:** Editor
 **Filed:** 2026-05-27
-**Revised:** 2026-05-27 (renamed from `afauth-bootstrap`; no production consumers)
+**Revised:** 2026-05-27 (renamed from `afauth-bootstrap`; JWKS URL
+  moved from `afauth.org/.well-known/jwks.json` to
+  `trust.afauth.org/.well-known/jwks.json`; no production consumers)
 **Affects:** core.md §10
 
 ## Summary
@@ -81,10 +83,11 @@ Insert immediately after §10.3:
 >
 > The JWT header MUST include a `kid` that resolves to a key
 > published in the JWKs document at
-> `https://afauth.org/.well-known/jwks.json`. Consuming services MUST
-> verify tokens offline against that document. The attestor MUST
-> publish a new `kid` at least one maximum-TTL (900 seconds) before
-> first use, so that caches can refresh without an outage window.
+> `https://trust.afauth.org/.well-known/jwks.json`. Consuming
+> services MUST verify tokens offline against that document. The
+> attestor MUST publish a new `kid` at least one maximum-TTL (900
+> seconds) before first use, so that caches can refresh without an
+> outage window.
 >
 > The trust attestor MUST NOT include personal data (email address,
 > phone number, payment details, government identifiers) in any
@@ -115,11 +118,12 @@ Insert immediately after §10.3:
 ## Security and privacy considerations
 
 **Single dependency during bootstrap.** Every service that requires
-`afauth-trust` shares a dependency on afauth.org publishing the JWKs
-document and signing tokens. Offline verification bounds the runtime
-blast radius: a brief afauth.org outage does not interrupt in-flight
-requests at consuming services; only token reissuance is affected.
-The 900-second `exp` cap bounds revocation latency.
+`afauth-trust` shares a dependency on the trust attestor publishing
+the JWKs document and signing tokens. Offline verification bounds
+the runtime blast radius: a brief trust-attestor outage does not
+interrupt in-flight requests at consuming services; only token
+reissuance is affected. The 900-second `exp` cap bounds revocation
+latency.
 
 **Audience binding prevents redirection.** Pinning `aud` to the
 destination `service_did` prevents an agent from replaying an
@@ -181,6 +185,21 @@ that move.
   the bootstrap hole) rather than the *role* (vouching for a
   human-bound agent). Wire-incompatible only with the unshipped
   draft.
+- **Pin the JWKS URL at `https://afauth.org/.well-known/jwks.json`
+  instead of `trust.afauth.org/.well-known/jwks.json`.** Considered
+  and used in the original draft. The apex variant required a
+  cross-vendor reverse proxy (Vercel-hosted apex →
+  Railway-hosted trust attestor) for cosmetic co-location with the
+  AFAuth brand, adding a failure mode (apex outage breaks token
+  verification ecosystem-wide even when the trust attestor itself
+  is healthy) for no operational benefit. Moved to
+  `trust.afauth.org/.well-known/jwks.json`, which matches the
+  industry norm — RFC 8414 (OAuth 2.0 Authorization Server
+  Metadata), OIDC Discovery, and every well-known IdP all serve
+  JWKS from the issuer's own domain. Co-locating authority and keys
+  is a stronger primitive: the trust attestor owns its keys
+  end-to-end and an editor of the marketing site cannot
+  accidentally break token verification.
 
 ## References
 
