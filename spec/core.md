@@ -704,9 +704,13 @@ The token MUST conform to JWT [RFC7519]:
 
 This specification reserves three classes of attestor identifier:
 
-- **Platform attestors**: `microsoft-entra-agent-id`, `google-cloud-agent-identity`, `aws-iam-agent`.
-- **Commerce attestors**: `fido-agent-payments`, `mastercard-verifiable-intent`, `stripe-projects`.
+- **Platform attestors**: `microsoft-entra-agent-id`, `google-cloud-agent-identity`.
+- **Commerce attestors**: `fido-agent-payments`, `mastercard-verifiable-intent`, `visa-trusted-agent`.
 - **Service-operator HMAC**: For first-party agents, services MAY accept tokens signed with a shared symmetric key under an identifier they define.
+
+Platform attestors are typically designed around a customer's own tenant: the assertion's audience claim names a relying party pre-registered in the attestor's directory. A service that accepts a platform attestor identifier should expect to set up per-tenant federation (or equivalent) to make the audience binding usable.
+
+Commerce attestors are typically transaction-scoped: their assertions materialise in the context of a payment authorisation rather than as standing identity tokens. A service that accepts a commerce attestor identifier should expect to consume the assertion in the same request flow that carries its payment context, not as a presentable token issued ahead of any commerce.
 
 The set of accepted attestors is declared per-service in `billing.accepted_attestors`. Conforming services MUST validate the attestation against the attestor's published verification key (for asymmetric attestors) or shared secret (for HMAC attestors).
 

@@ -53,9 +53,9 @@ Replace the existing §10.3 list with:
 >   Vouches that an agent's account DID is bound to a human-controlled
 >   account verified by one of the methods enumerated in §10.3.1.
 > - **Platform attestors**: `microsoft-entra-agent-id`,
->   `google-cloud-agent-identity`, `aws-iam-agent`.
+>   `google-cloud-agent-identity`.
 > - **Commerce attestors**: `fido-agent-payments`,
->   `mastercard-verifiable-intent`, `stripe-projects`.
+>   `mastercard-verifiable-intent`, `visa-trusted-agent`.
 > - **Service-operator HMAC**: For first-party agents, services MAY
 >   accept tokens signed with a shared symmetric key under an
 >   identifier they define.
