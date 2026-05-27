@@ -1,20 +1,21 @@
-# AFAP-0006: Reserve `afauth-bootstrap` as a recognized attestor
+# AFAP-0006: Reserve `afauth-trust` as a recognized attestor
 
 **Status:** Draft
 **Author:** Editor
 **Filed:** 2026-05-27
+**Revised:** 2026-05-27 (renamed from `afauth-bootstrap`; no production consumers)
 **Affects:** core.md §10
 
 ## Summary
 
-Reserve `afauth-bootstrap` as a recognized attestor identifier in §10.3,
-operated by afauth.org as the default attestor for v0.1 of the protocol.
-The role of the bootstrap attestor is narrow: bind an agent's account
-DID to a human-controlled account and issue a short-lived, audience-
-bound JWT that signals the binding to consuming services. Verification
-is offline against a published JWKs document. The protocol takes no
-opinion on what access a service should grant in response to any
-particular signal.
+Reserve `afauth-trust` as a recognized attestor identifier in §10.3,
+operated by afauth.org as the default attestor for v0.1 of the
+protocol. The role of the trust attestor is narrow: bind an agent's
+account DID to a human-controlled account and issue a short-lived,
+audience-bound JWT that signals the binding to consuming services.
+Verification is offline against a published JWKs document. The
+protocol takes no opinion on what access a service should grant in
+response to any particular signal.
 
 This AFAP reserves the identifier and pins the wire-level shape. It
 does not specify operator policy, abuse handling, or commercial terms.
@@ -39,7 +40,7 @@ or accepts unattested signups and bears the abuse risk.
 A neutral, openly-operated attestor at the protocol level closes the
 bootstrap hole. Long-term, platform and commerce attestors will join
 §10.3 when ecosystem adoption warrants their attention; until then,
-`afauth-bootstrap` keeps the surface alive.
+`afauth-trust` keeps the surface alive.
 
 ## Specification
 
@@ -49,7 +50,7 @@ Replace the existing §10.3 list with:
 
 > This specification reserves four classes of attestor identifier:
 >
-> - **Bootstrap attestor**: `afauth-bootstrap`. Operated by afauth.org.
+> - **Trust attestor**: `afauth-trust`. Operated by afauth.org.
 >   Vouches that an agent's account DID is bound to a human-controlled
 >   account verified by one of the methods enumerated in §10.3.1.
 > - **Platform attestors**: `microsoft-entra-agent-id`,
@@ -60,16 +61,15 @@ Replace the existing §10.3 list with:
 >   accept tokens signed with a shared symmetric key under an
 >   identifier they define.
 
-### New subsection §10.3.1 — Bootstrap attestor (`afauth-bootstrap`)
+### New subsection §10.3.1 — Trust attestor (`afauth-trust`)
 
 Insert immediately after §10.3:
 
-> ### 10.3.1 Bootstrap attestor (`afauth-bootstrap`)
+> ### 10.3.1 Trust attestor (`afauth-trust`)
 >
-> The bootstrap attestor issues JWTs that satisfy §10.2 and
-> additionally:
+> The trust attestor issues JWTs that satisfy §10.2 and additionally:
 >
-> - `iss` MUST be the string `afauth-bootstrap`.
+> - `iss` MUST be the string `afauth-trust`.
 > - `aud` MUST be the `service_did` of the destination service. A
 >   service MUST reject a token whose `aud` does not match its own
 >   `service_did`.
@@ -86,9 +86,9 @@ Insert immediately after §10.3:
 > publish a new `kid` at least one maximum-TTL (900 seconds) before
 > first use, so that caches can refresh without an outage window.
 >
-> The bootstrap attestor MUST NOT include personal data (email
-> address, phone number, payment details, government identifiers) in
-> any claim. Future claims that signal additional context MAY be added
+> The trust attestor MUST NOT include personal data (email address,
+> phone number, payment details, government identifiers) in any
+> claim. Future claims that signal additional context MAY be added
 > without revising this AFAP, provided they preserve the
 > offline-verification property and the privacy constraint above.
 >
@@ -102,36 +102,36 @@ Insert immediately after §10.3:
 **Wire-additive, no breaking change.**
 
 - §10.2 already permits attestor-specific claims; this AFAP defines
-  the claims a consumer can rely on when `iss == "afauth-bootstrap"`.
-- Services that do not list `afauth-bootstrap` in
+  the claims a consumer can rely on when `iss == "afauth-trust"`.
+- Services that do not list `afauth-trust` in
   `billing.accepted_attestors` are unaffected.
-- An agent that presents an `afauth-bootstrap` token to a service
-  that does not accept it receives the same rejection it would for
-  any unrecognized attestor — no new error code is needed.
+- An agent that presents an `afauth-trust` token to a service that
+  does not accept it receives the same rejection it would for any
+  unrecognized attestor — no new error code is needed.
 - The reference TypeScript SDK and CLI need to learn the
-  `afauth-bootstrap` `iss` value and the JWKs URL. No protocol-level
+  `afauth-trust` `iss` value and the JWKs URL. No protocol-level
   surface beyond §10.3 changes.
 
 ## Security and privacy considerations
 
 **Single dependency during bootstrap.** Every service that requires
-`afauth-bootstrap` shares a dependency on afauth.org publishing the
-JWKs document and signing tokens. Offline verification bounds the
-runtime blast radius: a brief afauth.org outage does not interrupt
-in-flight requests at consuming services; only token reissuance is
-affected. The 900-second `exp` cap bounds revocation latency.
+`afauth-trust` shares a dependency on afauth.org publishing the JWKs
+document and signing tokens. Offline verification bounds the runtime
+blast radius: a brief afauth.org outage does not interrupt in-flight
+requests at consuming services; only token reissuance is affected.
+The 900-second `exp` cap bounds revocation latency.
 
 **Audience binding prevents redirection.** Pinning `aud` to the
 destination `service_did` prevents an agent from replaying an
 attestation issued for service A against service B.
 
-**No PII in claims.** The bootstrap attestor emits a categorical
+**No PII in claims.** The trust attestor emits a categorical
 `verification` value, never the underlying address, number, or payment
 metadata. Consuming services receive a signal, not an identity.
 
 **Pairwise `sub` is preserved.** §3.3's per-service derivation default
 applies to the agent's account DID and therefore to the attestation's
-`sub`. The bootstrap attestor relays whatever account DID the agent
+`sub`. The trust attestor relays whatever account DID the agent
 presents and adds no new cross-service correlatability beyond what the
 agent itself chose.
 
@@ -141,13 +141,13 @@ flow, OAuth provider selection, payment processor, abuse handling).
 Those are operator-policy questions. The protocol surface is the JWT
 shape and the JWKs endpoint.
 
-**Governance.** afauth.org acts as both spec editor and bootstrap
-attestor operator at v0.1. This is acknowledged. If, at a later date,
+**Governance.** afauth.org acts as both spec editor and trust attestor
+operator at v0.1. This is acknowledged. If, at a later date,
 neutrality becomes operationally relevant — for example because
 platform or commerce attestors require it as a condition of joining
-§10.3 — a future AFAP may move the bootstrap attestor under a
-distinct identifier and entity. The wire shape defined here is
-unchanged by that move.
+§10.3 — a future AFAP may move the trust attestor under a distinct
+identifier and entity. The wire shape defined here is unchanged by
+that move.
 
 ## Alternatives considered
 
@@ -169,11 +169,18 @@ unchanged by that move.
   services must accept; categorical values let each service rank
   signals according to its own threat model. The latter matches the
   "operator decides" framing.
-- **Run the bootstrap attestor under a distinct entity from afauth.org
-  for governance neutrality.** Considered. Rejected for v0.1: the
+- **Run the trust attestor under a distinct entity from afauth.org for
+  governance neutrality.** Considered. Rejected for v0.1: the
   additional legal and operational overhead is not justified at the
-  working-draft stage. The governance note above leaves the door
-  open for a later move without wire changes.
+  working-draft stage. The governance note above leaves the door open
+  for a later move without wire changes.
+- **Name the identifier `afauth-bootstrap`.** Considered and used in
+  the original draft. Renamed to `afauth-trust` because the operator
+  hostname is `trust.afauth.org` and the user-facing brand reads as
+  "establishing trust"; `bootstrap` framed the *motivation* (closing
+  the bootstrap hole) rather than the *role* (vouching for a
+  human-bound agent). Wire-incompatible only with the unshipped
+  draft.
 
 ## References
 

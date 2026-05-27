@@ -231,8 +231,8 @@ surrounding §10 mechanics are untouched.
 ## References
 
 - §10.3 of [`../spec/core.md`](../spec/core.md)
-- AFAP-0006: AFAuth bootstrap attestor —
-  [`0006-afauth-bootstrap-attestor.md`](0006-afauth-bootstrap-attestor.md)
+- AFAP-0006: AFAuth trust attestor —
+  [`0006-afauth-trust-attestor.md`](0006-afauth-trust-attestor.md)
 - Visa Trusted Agent Protocol —
   <https://developer.visa.com/capabilities/trusted-agent-protocol/trusted-agent-protocol-specifications>
 - Amazon Bedrock AgentCore Identity (workload access token semantics)
