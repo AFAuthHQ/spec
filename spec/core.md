@@ -698,7 +698,10 @@ The token MUST conform to JWT [RFC7519]:
 - `iss` (issuer) MUST identify a known attestor.
 - `sub` (subject) MUST be the requesting agent's account DID.
 - `exp` MUST be in the future at the time of verification.
+- `sub_h` (subject — human, pairwise) MUST be present if the attestor asserts a binding between the agent's DID and a stable principal (typically a human account). The claim is defined in §10.4. When `sub_h` is present, `aud` MUST also be present, set to the destination service's `service_did`.
 - Other claims are attestor-specific.
+
+Attestors that signal a binding to a stable principal are additionally bound by the agent–principal uniqueness rule in §10.5.
 
 ### 10.3 Recognized attestors
 
@@ -723,14 +726,81 @@ The trust attestor issues JWTs that satisfy §10.2 and additionally:
 - `aud` MUST be the `service_did` of the destination service. A service MUST reject a token whose `aud` does not match its own `service_did`.
 - `iat` MUST be present. `exp - iat` MUST NOT exceed 900 seconds.
 - `verification` (string) MUST be present. Defined values: `"email"`, `"oauth"`, `"payment"`. Consuming services MUST ignore unknown values rather than rejecting the token, so that future values can be added without breaking existing verifiers.
+- `sub_h` (string) MUST be present and MUST satisfy §10.4. The trust attestor derives `sub_h` per §10.4.3 using an HMAC-SHA256 key (`K_pseudonym`) that is distinct from its JWT signing keys and is not rotated under normal operation.
+
+The trust attestor MUST enforce §10.5: at most one active human binding per agent DID. A binding-creation request for an agent DID that already has an active binding under a different human MUST be rejected, with no disclosure of the existing owner. The current owner MAY revoke their binding to release the agent DID for re-binding by another human.
 
 The JWT header MUST include a `kid` that resolves to a key published in the JWKs document at `https://trust.afauth.org/.well-known/jwks.json`. Consuming services MUST verify tokens offline against that document. The attestor MUST publish a new `kid` at least one maximum-TTL (900 seconds) before first use, so that caches can refresh without an outage window.
 
-The trust attestor MUST NOT include personal data (email address, phone number, payment details, government identifiers) in any claim. Future claims that signal additional context MAY be added without revising this AFAP, provided they preserve the offline-verification property and the privacy constraint above.
+The trust attestor MUST NOT include personal data (email address, phone number, payment details, government identifiers) in any claim. `sub_h` is derived such that this prohibition is preserved (§10.4.3). Future claims that signal additional context MAY be added without revising this AFAP, provided they preserve the offline-verification property and the privacy constraint above.
 
 The spec takes no opinion on what access a service grants in response to any particular `verification` value, nor on any ordering between values. The `verification` claim is a categorical signal; the service's policy is local.
 
-### 10.4 Attestation lifetime
+### 10.4 Pairwise human pseudonym (`sub_h`)
+
+`sub_h` is a pairwise pseudonymous identifier carried in attestations to give consuming services a stable handle for the human principal behind an agent, without revealing the human's identity and without enabling cross-service correlation.
+
+#### 10.4.1 When required
+
+An attestor MUST include `sub_h` in any attestation that asserts a binding between the agent's DID (`sub`) and a stable principal (typically a human account verified by the attestor). For the trust attestor, this is signalled by the presence of the `verification` claim; presence of `verification` without `sub_h` is malformed and MUST be rejected by the consuming service with `401 Unauthorized` and error code `invalid_attestation`.
+
+Attestors that do not bind the agent to a stable principal — for example, pure runtime attestors that vouch only for the agent's execution environment — MAY omit `sub_h`.
+
+#### 10.4.2 Required properties
+
+For every attestor implementing `sub_h`:
+
+- **Pairwise.** For a fixed principal P, the value of `sub_h` MUST differ across distinct `aud` values. Two services that compare `sub_h` values for the same principal MUST NOT see the same string.
+- **Stable.** For a fixed (principal, `aud`) pair, the value of `sub_h` MUST be identical across every attestation issued for that pair, across all of that principal's agents, and across time. Stability MUST be preserved across attestor signing-key rotations (§10.3.1) and across operational changes that preserve the principal record.
+- **Opaque.** `sub_h` MUST carry at least 128 bits of entropy and MUST NOT be invertible to the principal's identity, contact details, or any other personal data (§10.3.1). Consuming services MUST treat `sub_h` as an opaque string.
+- **Encoded.** `sub_h` MUST be a `base64url` string with no padding [RFC7515], between 22 and 86 characters in length.
+
+#### 10.4.3 Recommended construction
+
+Attestors SHOULD derive `sub_h` as:
+
+```
+sub_h = base64url( HMAC-SHA256( K_pseudonym, principal_id || ":" || aud ) )
+```
+
+where `K_pseudonym` is a high-entropy secret held by the attestor that is distinct from any JWT signing key and is not rotated under normal operation. Implementations MAY use other constructions, provided the §10.4.2 properties hold. Implementations MUST NOT derive `sub_h` from any data the attestor would be prohibited from publishing under §10.3.1.
+
+#### 10.4.4 Service use
+
+Services MAY use `sub_h` as a per-service uniqueness key for the human behind an agent — for example, to enforce "at most one free-tier account per human," to apply per-human rate limits across an agent fleet, or to recognise that several agent DIDs at the service belong to the same operator. The specification takes no opinion on how a service combines `sub_h` with `verification` or other signals; policy is local to each service.
+
+Services that accept attestations from more than one attestor MUST scope `sub_h` by `(iss, sub_h)` rather than by `sub_h` alone, since different attestors derive independent pseudonym spaces for the same human.
+
+#### 10.4.5 What `sub_h` is not
+
+`sub_h` is not a proof that the human controls no other principal record at the same attestor (an attestor's anti-Sybil property is operational, not cryptographic; see §12.9). It is not portable across attestors. It is not a verifiable credential about the human and MUST NOT be presented as one. It is not a contact identifier and MUST NOT be exposed in user-facing surfaces in a form a third party could correlate.
+
+### 10.5 Agent–principal binding uniqueness
+
+For every attestor that issues `sub_h` (§10.4), the binding between an agent DID and a principal MUST be one-to-one within the attestor at any point in time. Concretely:
+
+- An attestor MUST NOT issue two concurrently valid attestations carrying the same `sub` (agent DID) and the same `aud` but different `sub_h` values.
+- Equivalently: at most one active human binding per agent DID per attestor.
+
+An attestor MUST reject a binding-creation request that would establish a second active binding for an agent DID already bound to a different principal. The rejection SHOULD inform the requesting human that the agent DID is already bound, without disclosing which principal owns the existing binding (to preserve §10.3.1's prohibition on cross-principal correlation).
+
+#### 10.5.1 Rebinding
+
+When the existing binding is revoked or expires, the agent DID MAY be re-bound to the same or a different principal. The new binding produces a new `sub_h` for any `aud` reached by the new principal, computed per §10.4.3 from the new principal's identity. Consuming services MUST treat the change as a change of operator: a re-bound agent is, from the service's perspective, indistinguishable from a fresh registration of a new operator using the same agent DID.
+
+#### 10.5.2 Rationale
+
+If a single agent DID could carry distinct `sub_h` values issued by the same attestor (one per co-binding principal), an operator could circumvent any per-`sub_h` policy a service applies by rotating among the bindings on a per-request basis. The uniqueness rule preserves the property that, *within one attestor*, a service can rely on `sub_h` to mean "one human" rather than "one binding context that this human happens to be using right now."
+
+#### 10.5.3 Cross-attestor scope
+
+The rule binds within a single attestor. The specification does not — and cannot, in a federated attestor model — enforce uniqueness across attestors. A service that accepts attestations from more than one attestor for the same agent DID MAY treat such a configuration as anomalous and SHOULD document its handling (typically: dedupe by `(iss, sub_h)` and accept that the same agent may be reachable through multiple distinct human channels).
+
+#### 10.5.4 Multi-principal agents
+
+Use cases that appear to require multiple humans behind one agent DID (team-owned deployment bots, family assistants, multi-controller enterprise agents) are out of scope for v0.1. They are expected to be modelled in a future version as a single organisational principal that itself has multiple human controllers, rather than as multiple human bindings on a shared agent DID. Implementations MUST NOT use co-binding under §10.5 as an interim substitute, because doing so silently weakens the §10.4 dedup guarantee for every service that consumes the affected attestations.
+
+### 10.6 Attestation lifetime
 
 Attestations MUST be presented on a per-request basis. Services MUST NOT cache attestations beyond the JWT's `exp`. Attestations carry no state of their own; they are an additional gate on the signed request.
 
@@ -842,6 +912,17 @@ A network attacker capable of compromising TLS — or a hostile intermediary in 
 - Treat any change in the document's `service_did` value with suspicion if observed during the lifetime of an agent.
 
 Future versions of this specification may require the discovery document itself to be signed by the service's DID.
+
+### 12.9 Pseudonym integrity and attestor compromise
+
+The `sub_h` claim (§10.4) shifts a meaningful share of a service's anti-Sybil posture onto the attestor. Two consequences for attestor operators:
+
+- **`K_pseudonym` is a long-lived secret.** Compromise lets an attacker compute `sub_h` for any (principal, `aud`) the attestor has seen, which both deanonymises the pseudonym space and lets the attacker forge attestations whose `sub_h` collides with a legitimate human's. Attestors SHOULD hold `K_pseudonym` in the same protection envelope as JWT signing keys (HSM, cloud KMS, or equivalent) and MUST NOT log or transmit it. Rotating `K_pseudonym` invalidates every downstream service's dedup state and SHOULD be treated as an incident-response action rather than routine hygiene.
+- **Principal-record duplication is a Sybil escalation.** An attestor that lets one human create two principal records (e.g., by signing up twice with cosmetically distinct OAuth identities the attestor fails to dedupe) gives that human two distinct `sub_h` values at every service. Attestor operators MUST dedupe principal records on a stable upstream identifier (e.g., the OpenID `sub` returned by the OAuth provider) rather than on user-controlled fields (email, display name).
+
+The agent–principal uniqueness rule (§10.5) is the corresponding constraint on the binding layer: even a well-deduped principal table provides no protection if one principal can co-bind an agent DID with another. Attestors MUST enforce §10.5 in the binding-creation path, not only as a policy document.
+
+`sub_h` is not a Sybil oracle. It tells a service "these requests belong to the same principal at this attestor"; it does not tell the service "this principal is the only one the human controls." Services that need stronger uniqueness SHOULD require a `verification` value with intrinsically scarce backing (e.g., `"payment"`) in addition to using `sub_h`.
 
 ---
 
