@@ -672,6 +672,89 @@ async function scenarioReplayExpired(opts) {
   await assertErrorEnvelope(res, 401, 'replayed_nonce');
 }
 
+/**
+ * Scenario 8: trust attestation presented to a service (§10).
+ *
+ * Validates the full AFAP-0006 round-trip:
+ *   - agent links with the trust attestor (gated auto-confirm)
+ *   - agent calls `afauth trust token <service-did>` → mints an
+ *     `afauth-trust` JWT scoped to the reference server
+ *   - agent calls `afauth signup --attest <jwt>` → CLI presents
+ *     the JWT in `AFAuth-Attestation`
+ *   - reference server fetches trust's JWKS over the docker
+ *     network, verifies the JWT (iss=afauth-trust, sub=agent did,
+ *     aud=service did, EdDSA), accepts the signup
+ *
+ * Catches: drift across the full pipeline — trust signing keys,
+ * JWKS shape, CLI Attestation header construction, SDK verifier.
+ * No mock fits in this picture.
+ */
+async function scenarioTrustAttestation(opts) {
+  // 1. Fresh agent + link with trust (re-uses the auto-confirm
+  //    mechanism from the trust-link scenario).
+  let r = await runCli(opts, ['init']);
+  assert(r.code === 0, `init: ${r.stderr}`);
+
+  let confirmed = false;
+  const link = await runCliStreaming(
+    opts,
+    [
+      'trust', 'link',
+      '--base', opts.trustBase,
+      '--no-loopback',
+      '--no-browser',
+      '--timeout', '30',
+      '--poll', '1',
+    ],
+    async (line) => {
+      const m = line.match(/(https?:\/\/[^\s]+\/link\?req=([^\s&]+))/);
+      if (!m || confirmed) return;
+      confirmed = true;
+      const reqJwt = decodeURIComponent(m[2]);
+      const reqId = decodeJwtPayload(reqJwt).req_id;
+      const res = await fetch(opts.trustBase + '/v1/link/confirm-e2e', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          req_id: reqId,
+          email: 'e2e-human@example.com',
+        }),
+      });
+      if (!res.ok) throw new Error(`auto-confirm failed: ${res.status}`);
+    },
+  );
+  assert(link.code === 0, `trust link: ${link.stderr}`);
+
+  // 2. Mint an attestation JWT scoped to the reference server's
+  //    SERVICE_DID. The ref-server announces this as
+  //    did:web:localhost%3A4003 in its discovery doc.
+  const serviceDiscovery = await (await fetch(opts.serverBase + '/.well-known/afauth')).json();
+  const serviceDid = serviceDiscovery.service_did;
+  assert(/^did:web:/.test(serviceDid), `expected did:web:, got ${serviceDid}`);
+
+  r = await runCli(opts, ['trust', 'token', serviceDid]);
+  assert(r.code === 0, `trust token: ${r.stderr}`);
+  const jwt = r.stdout.trim();
+  assert(/^ey/.test(jwt), `expected JWT, got: ${jwt.slice(0, 40)}`);
+
+  // 3. Sign up against the reference server, presenting the JWT.
+  r = await runCli(opts, ['signup', '--attest', jwt, opts.serverBase]);
+  assert(r.code === 0, `signup --attest exit ${r.code}: ${r.stderr}`);
+  assert(
+    r.stdout.includes('signed up to ' + opts.serverBase),
+    `signup stdout missing confirmation: ${r.stdout}`,
+  );
+
+  // 4. Ledger persisted with UNCLAIMED state — proves the server
+  //    accepted the attested signup.
+  const ledger = JSON.parse(
+    fs.readFileSync(path.join(opts.tmpDir, 'accounts.json'), 'utf8'),
+  );
+  const entries = Object.values(ledger.accounts || {});
+  assert(entries.length === 1, `expected 1 ledger entry, got ${entries.length}`);
+  assert(entries[0].state === 'UNCLAIMED', `expected UNCLAIMED, got ${entries[0].state}`);
+}
+
 const SCENARIOS = {
   'init-signup': scenarioInitSignup,
   'pre-claim-key-rotate': scenarioPreClaimKeyRotate,
@@ -680,6 +763,7 @@ const SCENARIOS = {
   'registry-roundtrip': scenarioRegistryRoundTrip,
   'cross-service-portability': scenarioCrossServicePortability,
   'replay-expired': scenarioReplayExpired,
+  'trust-attestation': scenarioTrustAttestation,
 };
 
 // ---------- runner ----------

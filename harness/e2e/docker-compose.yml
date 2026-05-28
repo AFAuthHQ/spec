@@ -127,6 +127,13 @@ services:
       PORT: "3000"
       PUBLIC_BASE_URL: http://localhost:4003
       SERVICE_DID: did:web:localhost%3A4003
+      # Wire the e2e attestor: accept `afauth-trust` JWTs verified
+      # against the trust container's JWKS. The SDK's stock
+      # JwksAttestor refuses http URLs; the reference-server uses a
+      # LooseJwksAttestor shim for this fixture only.
+      ATTESTOR_TRUST_JWKS_URL: http://trust:3000/.well-known/jwks.json
+    depends_on:
+      - trust
     ports:
       - "4003:3000"
 

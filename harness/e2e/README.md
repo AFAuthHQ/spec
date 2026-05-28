@@ -13,7 +13,7 @@ For protocol-primitive conformance (vectors only), see the sibling
 
 ## Status
 
-Seven scenarios, all passing locally:
+Eight scenarios, all passing locally:
 
 | Scenario | What it exercises |
 |---|---|
@@ -24,14 +24,12 @@ Seven scenarios, all passing locally:
 | `registry-roundtrip` | AFAP-0003 service directory; seed a listing via `REGISTRY_E2E_DIRECT_INSERT`, look it up by DID and via list-with-filter |
 | `cross-service-portability` | §D.1 portability; same agent key signs up on two reference servers, two independent UNCLAIMED rows, both bound to the same DID |
 | `replay-expired` | §5.6 replay protection + expired-signature; uses an inline RFC 9421 signer to craft crafted probes and verify the live envelope (`expired_signature`, `replayed_nonce`) |
+| `trust-attestation` | §10 + AFAP-0006 attestation presented to a service; CLI mints an `afauth-trust` JWT via the trust container and the reference server verifies it against trust's JWKS over the docker network |
 
 Not yet covered (tracked as follow-on in ADR-0005 §Status):
 
 - §7 owner invitation + claim — needs an `e2e/last-invitation` shim
   on the reference server and `handleClaimCompletion` test-mode wiring
-- §10 attestation presented to a service — needs the reference server
-  to be configured as an attestor consumer (JWKS fetch + recognized
-  issuer)
 
 ## Layout
 
