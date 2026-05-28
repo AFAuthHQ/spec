@@ -59,6 +59,47 @@ function runCli(opts, args) {
   });
 }
 
+/**
+ * Like runCli, but invokes onLine(line) for every newline-terminated
+ * stdout line as it arrives. Use for interactive scenarios where the
+ * harness needs to react to CLI output before the process exits.
+ */
+function runCliStreaming(opts, args, onLine) {
+  return new Promise((resolve, reject) => {
+    if (!opts.cliBin) {
+      reject(new Error('AFAUTH_CLI_BIN is not set'));
+      return;
+    }
+    const env = { ...process.env, AFAUTH_HOME: opts.tmpDir };
+    const child = spawn(opts.cliBin, args, { env });
+    let stdout = '';
+    let stderr = '';
+    let buf = '';
+    child.stdout.on('data', (d) => {
+      const s = d.toString();
+      stdout += s;
+      buf += s;
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx);
+        buf = buf.slice(idx + 1);
+        try {
+          onLine(line);
+        } catch (e) {
+          child.kill();
+          reject(e);
+          return;
+        }
+      }
+    });
+    child.stderr.on('data', (d) => { stderr += d.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
 async function preflight(opts) {
   // Refuse to start scenarios if the stack isn't reachable. Saves
   // confusing "connection refused" errors deep inside a scenario.
@@ -80,6 +121,48 @@ async function preflight(opts) {
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`assert: ${msg}`);
+}
+
+/**
+ * Decode the JSON payload of a JWT without verifying the signature.
+ * Used to extract `req_id` from the link URL the CLI prints during
+ * `afauth trust link`. Signature verification is the trust service's
+ * job; the harness only needs the request id.
+ */
+function decodeJwtPayload(jwt) {
+  const parts = jwt.split('.');
+  if (parts.length < 2) throw new Error('jwt: expected 3 segments');
+  const padded = parts[1] + '='.repeat((4 - (parts[1].length % 4)) % 4);
+  const b64 = padded.replace(/-/g, '+').replace(/_/g, '/');
+  return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+}
+
+/**
+ * Assert a fetch Response carries a §11.1 error envelope:
+ *   { "error": { "code": "...", "message": "..." } }
+ * and the expected status code. Used by the negatives bundle.
+ */
+async function assertErrorEnvelope(res, expectedStatus, expectedCode) {
+  assert(
+    res.status === expectedStatus,
+    `expected status ${expectedStatus}, got ${res.status}`,
+  );
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    throw new Error('response body was not JSON');
+  }
+  assert(body && typeof body === 'object', 'body is not an object');
+  assert(body.error && typeof body.error === 'object', 'missing error object');
+  assert(
+    body.error.code === expectedCode,
+    `expected code=${expectedCode}, got code=${body.error.code}`,
+  );
+  assert(
+    typeof body.error.message === 'string' && body.error.message.length > 0,
+    'missing or empty error.message',
+  );
 }
 
 // ---------- scenarios ----------
@@ -139,12 +222,213 @@ async function scenarioInitSignup(opts) {
   );
 }
 
-// Scenario 2 placeholder: `init → trust link → signup`. Requires
-// either a test-mode auto-confirm endpoint on trust/ or a Playwright
-// browser harness. Tracked as follow-on in ADR-0005 §Status.
+/**
+ * Scenario 2: `afauth keys rotate` (§8.1 pre-claim key rotation).
+ *
+ * Validates:
+ *   - the CLI generates a new keypair locally
+ *   - the CLI signs the rotation request with the OLD key (§8.1)
+ *   - the reference server accepts the rotation and updates the
+ *     account's bound DID
+ *   - the local ledger is rewritten to point at the new DID
+ *
+ * Catches: silent rotation failures where the CLI swaps the key
+ * locally but the server-side rejects (or vice versa). Unit tests
+ * mock the wire; only e2e exercises the actual signed-with-old-key
+ * → verified-by-server round-trip.
+ */
+async function scenarioPreClaimKeyRotate(opts) {
+  // 1-2. Setup: init + signup (same as scenario 1).
+  let r = await runCli(opts, ['init']);
+  assert(r.code === 0, `init: ${r.stderr}`);
+  r = await runCli(opts, ['signup', opts.serverBase]);
+  assert(r.code === 0, `signup: ${r.stderr}`);
+
+  // 3. Capture the original DID.
+  const ledger0 = JSON.parse(
+    fs.readFileSync(path.join(opts.tmpDir, 'accounts.json'), 'utf8'),
+  );
+  const entries0 = Object.values(ledger0.accounts || {});
+  assert(entries0.length === 1, `expected 1 ledger entry, got ${entries0.length}`);
+  const oldDID = entries0[0].agent_did;
+  assert(/^did:key:z/.test(oldDID), `expected did:key, got ${oldDID}`);
+
+  // 4. Rotate.
+  r = await runCli(opts, ['keys', 'rotate', '--service', opts.serverBase]);
+  assert(r.code === 0, `keys rotate exit ${r.code}: ${r.stderr}`);
+  assert(
+    r.stdout.includes('rotated ' + opts.serverBase),
+    `rotate stdout missing confirmation: ${r.stdout}`,
+  );
+  assert(
+    r.stdout.includes('old: ' + oldDID),
+    `rotate stdout missing old DID: ${r.stdout}`,
+  );
+
+  // 5. Ledger now points at the new DID.
+  const ledger1 = JSON.parse(
+    fs.readFileSync(path.join(opts.tmpDir, 'accounts.json'), 'utf8'),
+  );
+  const entries1 = Object.values(ledger1.accounts || {});
+  const newDID = entries1[0].agent_did;
+  assert(newDID !== oldDID, 'ledger still has old DID after rotate');
+  assert(/^did:key:z/.test(newDID), `expected new did:key, got ${newDID}`);
+
+  // 6. `accounts list --json` agrees.
+  r = await runCli(opts, ['accounts', 'list', '--json']);
+  assert(r.code === 0, `list: ${r.stderr}`);
+  const listed = JSON.parse(r.stdout);
+  assert(
+    listed[0].agent_did === newDID,
+    `list shows ${listed[0].agent_did}, expected ${newDID}`,
+  );
+}
+
+/**
+ * Scenario 3: `afauth trust link` against a real trust attestor
+ * (AFAP-0006 §10).
+ *
+ * Validates the full link round-trip:
+ *   - CLI hits /v1/link/start → trust returns link URL + req_id
+ *   - the harness (acting as the browser human) auto-confirms via
+ *     the gated /v1/link/confirm-e2e endpoint
+ *   - CLI's polling picks up the confirmed state and pops the
+ *     binding token from Redis
+ *   - the CLI persists trust state to ~/.afauth/trust.json
+ *
+ * Catches: drift between the agent-side signing of /v1/link/poll
+ * and the trust-side verification — entirely a wire concern, not
+ * something unit tests reach. This scenario depends on
+ * TRUST_E2E_AUTOCONFIRM=1 being set in the docker-compose stack.
+ */
+async function scenarioTrustLink(opts) {
+  // 1. Fresh agent.
+  let r = await runCli(opts, ['init']);
+  assert(r.code === 0, `init: ${r.stderr}`);
+
+  // 2. Start `afauth trust link` in the background. The CLI will
+  //    print the link URL, then poll. We extract req_id from the
+  //    JWT in the link URL, post the auto-confirm, and the CLI's
+  //    next poll will succeed.
+  let confirmed = false;
+  const linkResult = await runCliStreaming(
+    opts,
+    [
+      'trust', 'link',
+      '--base', opts.trustBase,
+      '--no-loopback',
+      '--no-browser',
+      '--timeout', '30',
+      '--poll', '1',
+    ],
+    async (line) => {
+      // The CLI prints "  http://.../link?req=<jwt>" on its own line.
+      const m = line.match(/(https?:\/\/[^\s]+\/link\?req=([^\s&]+))/);
+      if (!m || confirmed) return;
+      confirmed = true;
+      const reqJwt = decodeURIComponent(m[2]);
+      const payload = decodeJwtPayload(reqJwt);
+      const reqId = payload.req_id;
+      assert(typeof reqId === 'string', `req_id missing from link JWT payload`);
+
+      // Auto-confirm as a synthetic human. Mirrors what the browser
+      // does after the human clicks "Confirm" on /link.
+      const res = await fetch(opts.trustBase + '/v1/link/confirm-e2e', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          req_id: reqId,
+          email: 'e2e-human@example.com',
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(
+          `auto-confirm failed: status ${res.status}: ${body}`,
+        );
+      }
+    },
+  );
+
+  assert(linkResult.code === 0, `trust link exit ${linkResult.code}: ${linkResult.stderr}`);
+  assert(confirmed, 'harness never detected the link URL in CLI stdout');
+  assert(
+    linkResult.stdout.includes('linked ✓'),
+    `trust link stdout missing "linked ✓": ${linkResult.stdout}`,
+  );
+  assert(
+    fs.existsSync(path.join(opts.tmpDir, 'trust.json')),
+    'trust.json not written to AFAUTH_HOME',
+  );
+
+  // 3. trust.json has the expected shape.
+  const trustState = JSON.parse(
+    fs.readFileSync(path.join(opts.tmpDir, 'trust.json'), 'utf8'),
+  );
+  assert(
+    /^[0-9a-f-]{36}$/.test(trustState.binding_id),
+    `unexpected binding_id: ${trustState.binding_id}`,
+  );
+  assert(
+    typeof trustState.binding_token === 'string' && trustState.binding_token.length > 0,
+    'binding_token missing',
+  );
+}
+
+/**
+ * Scenario 4: §11.1 error envelope conformance probes.
+ *
+ * The reference server is the consumer of the @afauthhq/server SDK;
+ * a regression here means anyone wiring the SDK into Hono / Express
+ * silently leaks 500s instead of conformant 401 envelopes. We
+ * already caught this once (the wrap() helper); this scenario stops
+ * it from coming back.
+ *
+ * Only checks paths that don't require valid signing (signing-with-
+ * adjusted-timestamp / replayed-nonce probes need a custom signer
+ * which is tracked as follow-on).
+ */
+async function scenarioNegatives(opts) {
+  // 1. Unsigned GET /accounts/me → 401 invalid_signature.
+  let res = await fetch(opts.serverBase + '/afauth/v1/accounts/me');
+  await assertErrorEnvelope(res, 401, 'invalid_signature');
+
+  // 2. Unsigned POST /accounts/me/keys/rotate → 401 invalid_signature.
+  res = await fetch(opts.serverBase + '/afauth/v1/accounts/me/keys/rotate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ new_account_did: 'did:key:zAAA' }),
+  });
+  await assertErrorEnvelope(res, 401, 'invalid_signature');
+
+  // 3. Unsigned POST /accounts/me/owner-invitation → 401.
+  res = await fetch(opts.serverBase + '/afauth/v1/accounts/me/owner-invitation', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ recipient_type: 'email', recipient_value: 'a@b.co' }),
+  });
+  await assertErrorEnvelope(res, 401, 'invalid_signature');
+
+  // 4. GET /.well-known/afauth → 200 with valid DiscoveryDocument.
+  res = await fetch(opts.serverBase + '/.well-known/afauth');
+  assert(res.status === 200, `discovery: expected 200, got ${res.status}`);
+  const doc = await res.json();
+  assert(doc.afauth_version === '0.1', `discovery: bad afauth_version: ${doc.afauth_version}`);
+  assert(
+    typeof doc.service_did === 'string' && doc.service_did.length > 0,
+    'discovery: service_did missing',
+  );
+  assert(
+    Array.isArray(doc.signature_algorithms) && doc.signature_algorithms.includes('ed25519'),
+    'discovery: signature_algorithms missing ed25519',
+  );
+}
 
 const SCENARIOS = {
   'init-signup': scenarioInitSignup,
+  'pre-claim-key-rotate': scenarioPreClaimKeyRotate,
+  'trust-link': scenarioTrustLink,
+  'negatives': scenarioNegatives,
 };
 
 // ---------- runner ----------
@@ -175,9 +459,10 @@ async function main() {
     process.exit(2);
   }
 
-  const opts = makeOpts();
   try {
-    await preflight(opts);
+    // Preflight against shared opts so we don't bother making a tmp
+    // dir if the stack is down.
+    await preflight(DEFAULTS);
   } catch (e) {
     console.error(`PRE   ${e.message}`);
     console.error('hint: run ./scripts/up.sh first');
@@ -187,6 +472,8 @@ async function main() {
   let pass = 0;
   let fail = 0;
   for (const name of selected) {
+    // Each scenario gets its own AFAUTH_HOME so state doesn't bleed.
+    const opts = makeOpts();
     try {
       await SCENARIOS[name](opts);
       console.log(`PASS  ${name}`);
@@ -196,9 +483,10 @@ async function main() {
       console.log(`      ${e.message}`);
       if (e.stack) console.log(e.stack.split('\n').slice(1, 4).map((l) => '      ' + l.trim()).join('\n'));
       fail++;
+    } finally {
+      cleanupOpts(opts);
     }
   }
-  cleanupOpts(opts);
 
   console.log('');
   console.log(`${pass} passed, ${fail} failed (of ${pass + fail})`);
@@ -212,4 +500,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { SCENARIOS, runCli, preflight };
+module.exports = { SCENARIOS, runCli, runCliStreaming, preflight, decodeJwtPayload };

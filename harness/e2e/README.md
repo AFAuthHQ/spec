@@ -13,19 +13,26 @@ For protocol-primitive conformance (vectors only), see the sibling
 
 ## Status
 
-Scaffold — first scenario is `afauth init → afauth signup`.
+Four scenarios, all CLI-driven and passing locally:
 
-The first scenario in ADR-0005 lists `init → trust link → signup`. The
-`trust link` step is deferred to scenario 2 because the human-confirm
-step requires either:
+| Scenario | What it exercises |
+|---|---|
+| `init-signup` | §6.3 implicit signup; CLI ↔ reference-server signed-request round-trip |
+| `pre-claim-key-rotate` | §8.1 pre-claim key rotation; CLI signs with old key, server accepts, ledger updates |
+| `trust-link` | AFAP-0006 link flow; CLI ↔ trust attestor link round-trip via the gated `TRUST_E2E_AUTOCONFIRM` endpoint |
+| `negatives` | §11.1 error envelope conformance on unsigned probes (locks in the `AFAuthError.toResponse()` wiring on the reference server) |
 
-- a test-mode auto-confirm endpoint in `trust/` (small PR to that
-  repo), or
-- a Playwright browser harness here (larger scope).
+Not yet covered (tracked as follow-on in ADR-0005 §Status):
 
-Scenario 1 (`init → signup`) is sufficient to validate that the
-harness pattern works end-to-end: compose stack-up, CLI builds, signed
-request reaches the reference server, signature verifies.
+- §7 owner invitation + claim — needs an `e2e/last-invitation` shim
+  on the reference server and `handleClaimCompletion` test-mode wiring
+- §10 attestation presented to a service — needs the reference server
+  to be configured as an attestor consumer (JWKS fetch + recognized
+  issuer)
+- AFAP-0003 registry round-trip
+- Cross-service portability (§D.1)
+- Replay-window + expired-timestamp probes (need a custom signer in
+  the harness, parallel to `@afauthhq/agent`)
 
 ## Layout
 

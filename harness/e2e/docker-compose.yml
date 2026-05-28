@@ -61,6 +61,11 @@ services:
       TRUST_ADMIN_SECRET: e2e-admin-secret-1234567890
       TRUST_KEK_BASE64: q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=
       TRUST_PSEUDONYM_KEY_BASE64: zc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc0=
+      # Test-mode gate: enables POST /v1/link/confirm-e2e, which lets
+      # the harness auto-confirm a pending link request without a
+      # browser. See trust/src/lib/config.ts for the warning. MUST NOT
+      # be set in any real deployment.
+      TRUST_E2E_AUTOCONFIRM: "1"
       EMAIL_PROVIDER: stdout
       EMAIL_FROM: no-reply@e2e.afauth.local
     ports:
