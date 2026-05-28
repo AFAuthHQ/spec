@@ -1,0 +1,41 @@
+{
+  "name": "malformed-sub-h-short",
+  "description": "§10.4.2 — sub_h shorter than 22 base64url chars. A conforming verifier MUST reject with invalid_attestation.",
+  "section": "§10.4",
+  "jwt": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6InRrLXZlY3RvcnMtMjAyNC0wNSJ9.eyJpc3MiOiJhZmF1dGgtdHJ1c3QiLCJzdWIiOiJkaWQ6a2V5Ono2TWtpWWJ3QzVob25BMnN4RTdYTEF5Sk1ERmliTHZWZzhGZ29kQlg0QTRDYVVnciIsImF1ZCI6ImRpZDp3ZWI6c3ZjLmV4YW1wbGUiLCJpYXQiOjE3MTUwMDAwMDAsImV4cCI6MTcxNTAwMDkwMCwidmVyaWZpY2F0aW9uIjoib2F1dGgiLCJzdWJfaCI6InRvb1Nob3J0In0.uO35FyTkXhpEJr8jjrDkCrTY8kJb_05cTEG_wPsNXHBSp5ALbWmXqLZdEfhxut42u43hogJUe2I_tofEITLZDg",
+  "header_decoded": {
+    "alg": "EdDSA",
+    "typ": "JWT",
+    "kid": "tk-vectors-2024-05"
+  },
+  "payload_decoded": {
+    "iss": "afauth-trust",
+    "sub": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "aud": "did:web:svc.example",
+    "iat": 1715000000,
+    "exp": 1715000900,
+    "verification": "oauth",
+    "sub_h": "tooShort"
+  },
+  "jwks": {
+    "keys": [
+      {
+        "crv": "Ed25519",
+        "x": "2rPsDGEL8VpA9OHgc5MQiya6g0_e7Oj4hrRKSPBpN_I",
+        "kty": "OKP",
+        "kid": "tk-vectors-2024-05",
+        "use": "sig",
+        "alg": "EdDSA"
+      }
+    ]
+  },
+  "verification_inputs": {
+    "expected_aud": "did:web:svc.example",
+    "expected_agent_did": "did:key:z6MkiYbwC5honA2sxE7XLAyJMDFibLvVg8FgodBX4A4CaUgr",
+    "now_unix": 1715000010
+  },
+  "expected": {
+    "accept": false,
+    "error_code": "invalid_attestation"
+  }
+}
