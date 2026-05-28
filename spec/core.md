@@ -702,8 +702,9 @@ The token MUST conform to JWT [RFC7519]:
 
 ### 10.3 Recognized attestors
 
-This specification reserves three classes of attestor identifier:
+This specification reserves four classes of attestor identifier:
 
+- **Trust attestor**: `afauth-trust`. Operated by afauth.org. Vouches that an agent's account DID is bound to a human-controlled account verified by one of the methods enumerated in §10.3.1.
 - **Platform attestors**: `microsoft-entra-agent-id`, `google-cloud-agent-identity`.
 - **Commerce attestors**: `fido-agent-payments`, `mastercard-verifiable-intent`, `visa-trusted-agent`.
 - **Service-operator HMAC**: For first-party agents, services MAY accept tokens signed with a shared symmetric key under an identifier they define.
@@ -713,6 +714,21 @@ Platform attestors are typically designed around a customer's own tenant: the as
 Commerce attestors are typically transaction-scoped: their assertions materialise in the context of a payment authorisation rather than as standing identity tokens. A service that accepts a commerce attestor identifier should expect to consume the assertion in the same request flow that carries its payment context, not as a presentable token issued ahead of any commerce.
 
 The set of accepted attestors is declared per-service in `billing.accepted_attestors`. Conforming services MUST validate the attestation against the attestor's published verification key (for asymmetric attestors) or shared secret (for HMAC attestors).
+
+### 10.3.1 Trust attestor (`afauth-trust`)
+
+The trust attestor issues JWTs that satisfy §10.2 and additionally:
+
+- `iss` MUST be the string `afauth-trust`.
+- `aud` MUST be the `service_did` of the destination service. A service MUST reject a token whose `aud` does not match its own `service_did`.
+- `iat` MUST be present. `exp - iat` MUST NOT exceed 900 seconds.
+- `verification` (string) MUST be present. Defined values: `"email"`, `"oauth"`, `"payment"`. Consuming services MUST ignore unknown values rather than rejecting the token, so that future values can be added without breaking existing verifiers.
+
+The JWT header MUST include a `kid` that resolves to a key published in the JWKs document at `https://trust.afauth.org/.well-known/jwks.json`. Consuming services MUST verify tokens offline against that document. The attestor MUST publish a new `kid` at least one maximum-TTL (900 seconds) before first use, so that caches can refresh without an outage window.
+
+The trust attestor MUST NOT include personal data (email address, phone number, payment details, government identifiers) in any claim. Future claims that signal additional context MAY be added without revising this AFAP, provided they preserve the offline-verification property and the privacy constraint above.
+
+The spec takes no opinion on what access a service grants in response to any particular `verification` value, nor on any ordering between values. The `verification` claim is a categorical signal; the service's policy is local.
 
 ### 10.4 Attestation lifetime
 

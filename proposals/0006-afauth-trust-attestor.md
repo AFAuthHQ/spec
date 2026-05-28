@@ -1,11 +1,14 @@
 # AFAP-0006: Reserve `afauth-trust` as a recognized attestor
 
-**Status:** Draft
+**Status:** Accepted
 **Author:** Editor
 **Filed:** 2026-05-27
 **Revised:** 2026-05-27 (renamed from `afauth-bootstrap`; JWKS URL
   moved from `afauth.org/.well-known/jwks.json` to
   `trust.afauth.org/.well-known/jwks.json`; no production consumers)
+**Accepted:** 2026-05-28 (§10.3 list expanded to four classes;
+  §10.3.1 inserted with normative JWT and JWKS requirements; composed
+  with AFAP-0007's refreshed identifier list)
 **Affects:** core.md §10
 
 ## Summary
