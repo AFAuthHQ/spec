@@ -13,7 +13,7 @@ For protocol-primitive conformance (vectors only), see the sibling
 
 ## Status
 
-Four scenarios, all CLI-driven and passing locally:
+Six scenarios, all passing locally:
 
 | Scenario | What it exercises |
 |---|---|
@@ -21,6 +21,8 @@ Four scenarios, all CLI-driven and passing locally:
 | `pre-claim-key-rotate` | §8.1 pre-claim key rotation; CLI signs with old key, server accepts, ledger updates |
 | `trust-link` | AFAP-0006 link flow; CLI ↔ trust attestor link round-trip via the gated `TRUST_E2E_AUTOCONFIRM` endpoint |
 | `negatives` | §11.1 error envelope conformance on unsigned probes (locks in the `AFAuthError.toResponse()` wiring on the reference server) |
+| `registry-roundtrip` | AFAP-0003 service directory; seed a listing via `REGISTRY_E2E_DIRECT_INSERT`, look it up by DID and via list-with-filter |
+| `cross-service-portability` | §D.1 portability; same agent key signs up on two reference servers, two independent UNCLAIMED rows, both bound to the same DID |
 
 Not yet covered (tracked as follow-on in ADR-0005 §Status):
 
@@ -29,8 +31,6 @@ Not yet covered (tracked as follow-on in ADR-0005 §Status):
 - §10 attestation presented to a service — needs the reference server
   to be configured as an attestor consumer (JWKS fetch + recognized
   issuer)
-- AFAP-0003 registry round-trip
-- Cross-service portability (§D.1)
 - Replay-window + expired-timestamp probes (need a custom signer in
   the harness, parallel to `@afauthhq/agent`)
 

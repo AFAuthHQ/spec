@@ -112,6 +112,11 @@ services:
       PUBLIC_BASE_URL: http://localhost:4002
       REGISTRY_ADMIN_SECRET: e2e-registry-admin-secret-1234567890
       REGISTRY_CRON_SECRET: e2e-registry-cron-secret-1234567890
+      # Test-mode gate: enables POST /admin/e2e/listings, which lets
+      # the harness seed a listing without the challenge/proof
+      # ceremony and without the HTTPS/public-host constraint. See
+      # registry/src/lib/config.ts. MUST NOT be set in production.
+      REGISTRY_E2E_DIRECT_INSERT: "1"
     ports:
       - "4002:3000"
 
@@ -124,6 +129,18 @@ services:
       SERVICE_DID: did:web:localhost%3A4003
     ports:
       - "4003:3000"
+
+  # Second reference server for the cross-service portability scenario
+  # (§D.1). Different SERVICE_DID + PUBLIC_BASE_URL; otherwise identical.
+  reference-server-b:
+    build:
+      context: ./reference-server
+    environment:
+      PORT: "3000"
+      PUBLIC_BASE_URL: http://localhost:4004
+      SERVICE_DID: did:web:localhost%3A4004
+    ports:
+      - "4004:3000"
 
 volumes:
   trust_pg:

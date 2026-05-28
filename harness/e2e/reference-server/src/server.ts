@@ -43,13 +43,18 @@ const PUBLIC_BASE_URL =
   process.env["PUBLIC_BASE_URL"] ?? `http://localhost:${PORT}`;
 const SERVICE_DID = process.env["SERVICE_DID"] ?? "did:web:localhost%3A4003";
 
+// `claim_page` MUST be a URL the human visits; the spec (§4.4)
+// allows endpoints to be paths *or* absolute URLs, but several
+// downstream consumers (e.g. registry.afauth.org's
+// DiscoveryDocSchema) require a URL here. Emitting an absolute URL
+// keeps the reference fixture compatible with all of them.
 const discovery: DiscoveryDocument = {
   afauth_version: "0.1",
   service_did: SERVICE_DID,
   endpoints: {
     accounts: "/afauth/v1/accounts",
     owner_invitation: "/afauth/v1/accounts/me/owner-invitation",
-    claim_page: "/claim",
+    claim_page: `${PUBLIC_BASE_URL.replace(/\/$/, "")}/claim`,
     claim_completion: "/afauth/v1/claim",
     key_rotation: "/afauth/v1/accounts/me/keys/rotate",
   },

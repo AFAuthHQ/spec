@@ -35,6 +35,7 @@ const DEFAULTS = {
   trustBase: process.env.AFAUTH_TRUST_BASE || 'http://localhost:4001',
   registryBase: process.env.AFAUTH_REGISTRY_BASE || 'http://localhost:4002',
   serverBase: process.env.AFAUTH_SERVER_BASE || 'http://localhost:4003',
+  serverBaseB: process.env.AFAUTH_SERVER_BASE_B || 'http://localhost:4004',
   cliBin: process.env.AFAUTH_CLI_BIN || '',
 };
 
@@ -105,9 +106,9 @@ async function preflight(opts) {
   // confusing "connection refused" errors deep inside a scenario.
   const urls = [
     ['reference-server', opts.serverBase + '/healthz'],
+    ['reference-server-b', opts.serverBaseB + '/healthz'],
     ['trust', opts.trustBase + '/healthz'],
-    // registry healthz isn't load-bearing for the first scenario —
-    // probe it but don't fail if it's not up.
+    ['registry', opts.registryBase + '/healthz'],
   ];
   for (const [name, url] of urls) {
     try {
@@ -424,11 +425,145 @@ async function scenarioNegatives(opts) {
   );
 }
 
+/**
+ * Scenario 5: registry round-trip (AFAP-0003).
+ *
+ * Validates the service-directory promise:
+ *   - a service publishes a discovery doc at a well-known URL
+ *   - the registry stores (service_did, discovery_url, doc) and
+ *     returns it on lookup-by-DID and on the list endpoint
+ *   - an agent that has the service_did can resolve back to the
+ *     discovery URL without already knowing it
+ *
+ * We bypass the production challenge/proof ceremony via the
+ * gated REGISTRY_E2E_DIRECT_INSERT endpoint — the SSRF protection
+ * in registry's fetchText (https-only, public-host-only) blocks
+ * docker-internal URLs, and the ceremony isn't what we're testing
+ * here. The wire shape is: harness fetches the live discovery
+ * doc, hands it to registry, then reads it back.
+ *
+ * Catches: schema drift between the reference server's discovery
+ * doc and the registry's DiscoveryDocSchema (we already caught
+ * one — the `claim_page` URL requirement). Future catches: DID
+ * normalisation regressions, list/search filtering breakage.
+ */
+async function scenarioRegistryRoundTrip(opts) {
+  // 1. Fetch the live discovery doc from the reference server.
+  let res = await fetch(opts.serverBase + '/.well-known/afauth');
+  assert(res.ok, `discovery fetch failed: ${res.status}`);
+  const doc = await res.json();
+  const serviceDid = doc.service_did;
+  assert(
+    typeof serviceDid === 'string' && serviceDid.startsWith('did:'),
+    `discovery doc missing service_did: ${JSON.stringify(doc).slice(0, 200)}`,
+  );
+
+  // 2. Seed the listing into the registry.
+  const submission = {
+    service_did: serviceDid,
+    discovery_url: opts.serverBase + '/.well-known/afauth',
+    discovery_doc: doc,
+    title: 'E2E reference service',
+    description: 'Inserted by spec/harness/e2e/run.js — registry-roundtrip.',
+    tags: ['e2e', 'reference'],
+  };
+  res = await fetch(opts.registryBase + '/admin/e2e/listings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(submission),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`seed failed: ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const inserted = await res.json();
+  assert(inserted.service_did === serviceDid, `inserted DID mismatch: ${inserted.service_did}`);
+
+  // 3. Look up by DID — round-trip.
+  res = await fetch(
+    opts.registryBase + '/v1/listings/' + encodeURIComponent(serviceDid),
+  );
+  assert(res.status === 200, `lookup-by-DID expected 200, got ${res.status}`);
+  const lookup = await res.json();
+  assert(lookup.service_did === serviceDid, `lookup DID mismatch: ${lookup.service_did}`);
+  assert(
+    lookup.discovery_url === submission.discovery_url,
+    `lookup discovery_url mismatch: ${lookup.discovery_url}`,
+  );
+  assert(lookup.title === submission.title, `lookup title mismatch: ${lookup.title}`);
+
+  // 4. List with a tag filter, confirm the seeded entry surfaces.
+  res = await fetch(opts.registryBase + '/v1/listings?tag=e2e&limit=50');
+  assert(res.status === 200, `list expected 200, got ${res.status}`);
+  const list = await res.json();
+  assert(Array.isArray(list.listings), `list.listings is not an array`);
+  const found = list.listings.find((l) => l.service_did === serviceDid);
+  assert(found, `seeded listing not present in tag=e2e list`);
+}
+
+/**
+ * Scenario 6: cross-service portability (§D.1).
+ *
+ * Validates the headline promise of the protocol: an agent's
+ * did:key is portable across services. Same agent key, two
+ * services, two independent UNCLAIMED accounts. Neither service
+ * has knowledge of the other; the only thing tying the rows
+ * together is the agent's DID.
+ *
+ * Catches: any regression that introduces hidden cross-service
+ * coupling (e.g. an SDK change that fetches a "primary" service
+ * before signing up). Two ref-server containers (different
+ * SERVICE_DIDs) make the test honest — there's no way for them
+ * to coordinate.
+ */
+async function scenarioCrossServicePortability(opts) {
+  // 1. Fresh agent.
+  let r = await runCli(opts, ['init']);
+  assert(r.code === 0, `init: ${r.stderr}`);
+  const keyJson = JSON.parse(
+    fs.readFileSync(path.join(opts.tmpDir, 'key.json'), 'utf8'),
+  );
+  // Sanity-check the agent did is fixed across the scenario.
+  const agentDid = keyJson.did_key;
+  assert(/^did:key:z/.test(agentDid), `expected did:key, got ${agentDid}`);
+
+  // 2. Sign up on server A.
+  r = await runCli(opts, ['signup', opts.serverBase]);
+  assert(r.code === 0, `signup A: ${r.stderr}`);
+
+  // 3. Sign up on server B (different SERVICE_DID, different stack).
+  r = await runCli(opts, ['signup', opts.serverBaseB]);
+  assert(r.code === 0, `signup B: ${r.stderr}`);
+
+  // 4. Ledger has two independent entries, both keyed by the same
+  //    agent DID.
+  const ledger = JSON.parse(
+    fs.readFileSync(path.join(opts.tmpDir, 'accounts.json'), 'utf8'),
+  );
+  const entries = Object.values(ledger.accounts || {});
+  assert(entries.length === 2, `expected 2 ledger entries, got ${entries.length}`);
+
+  const byService = new Map(entries.map((e) => [e.service_url, e]));
+  const a = byService.get(opts.serverBase);
+  const b = byService.get(opts.serverBaseB);
+  assert(a, `ledger missing entry for ${opts.serverBase}`);
+  assert(b, `ledger missing entry for ${opts.serverBaseB}`);
+  assert(a.state === 'UNCLAIMED', `A state expected UNCLAIMED, got ${a.state}`);
+  assert(b.state === 'UNCLAIMED', `B state expected UNCLAIMED, got ${b.state}`);
+  assert(
+    a.agent_did === b.agent_did,
+    `agent DIDs diverged: A=${a.agent_did} vs B=${b.agent_did}`,
+  );
+  assert(a.agent_did === agentDid, `A agent_did != key.json did`);
+}
+
 const SCENARIOS = {
   'init-signup': scenarioInitSignup,
   'pre-claim-key-rotate': scenarioPreClaimKeyRotate,
   'trust-link': scenarioTrustLink,
   'negatives': scenarioNegatives,
+  'registry-roundtrip': scenarioRegistryRoundTrip,
+  'cross-service-portability': scenarioCrossServicePortability,
 };
 
 // ---------- runner ----------
