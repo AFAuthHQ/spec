@@ -22,7 +22,7 @@
 
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { AFAuthError } from "@afauthhq/core";
+import { AFAuthError, type Recipient } from "@afauthhq/core";
 import {
   consoleEmailHandler,
   MemoryAccountStore,
@@ -32,6 +32,8 @@ import {
   type Attestor,
   type AttestationClaims,
   type DiscoveryDocument,
+  type OwnerSession,
+  type RecipientHandler,
   type VerifyOptions,
 } from "@afauthhq/server";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -59,6 +61,48 @@ const SERVICE_DID = process.env["SERVICE_DID"] ?? "did:web:localhost%3A4003";
 const ATTESTOR_TRUST_JWKS_URL = process.env["ATTESTOR_TRUST_JWKS_URL"];
 const ATTESTOR_TRUST_ISS = process.env["ATTESTOR_TRUST_ISS"] ?? "afauth-trust";
 const ATTESTED_ONLY = process.env["ATTESTED_ONLY"] === "1";
+
+// E2E_CLAIM gates the in-memory invitation capture + claim
+// completion endpoints. When set:
+//   - the email RecipientHandler captures the magic-link details
+//     instead of logging them, so the harness can fish them out
+//     via GET /e2e/last-invitation
+//   - POST /e2e/claim accepts {token, email} and drives the
+//     SDK's handleClaimCompletion with a synthetic OwnerSession,
+//     so the scenario can flip an INVITED account to CLAIMED
+//     without a browser
+// Default off; setting it in production would let any caller
+// claim any pending invitation.
+const E2E_CLAIM = process.env["E2E_CLAIM"] === "1";
+
+interface CapturedInvitation {
+  recipient: Recipient;
+  claim_token: string;
+  claim_page_url: string;
+  redirect_url?: string;
+  captured_at: string;
+}
+const capturedInvitations: CapturedInvitation[] = [];
+
+const captureEmailHandler: RecipientHandler = {
+  async initiate({ recipient, claimToken, claimPageUrl, redirectUrl }) {
+    if (recipient.type !== "email") {
+      throw new AFAuthError(
+        "unsupported_recipient_type",
+        400,
+        `captureEmailHandler received non-email recipient: ${recipient.type}`,
+      );
+    }
+    capturedInvitations.push({
+      recipient,
+      claim_token: claimToken,
+      claim_page_url: claimPageUrl,
+      redirect_url: redirectUrl,
+      captured_at: new Date().toISOString(),
+    });
+  },
+  matches: consoleEmailHandler.matches,
+};
 
 /**
  * Minimal `Attestor` implementation that bypasses the SDK's
@@ -151,7 +195,7 @@ const server = new Server({
   revocationList: new MemoryRevocationList(),
   serviceDid: SERVICE_DID,
   accounts: new MemoryAccountStore(),
-  recipients: { email: consoleEmailHandler },
+  recipients: { email: E2E_CLAIM ? captureEmailHandler : consoleEmailHandler },
   discovery,
   baseUrl: PUBLIC_BASE_URL,
   ...(attestor ? { attestor } : {}),
@@ -182,6 +226,58 @@ app.post("/afauth/v1/accounts/me/keys/rotate", async (c) =>
 app.get("/claim", (c) =>
   c.text("e2e reference server — claim page stub", 200),
 );
+
+// ----- E2E_CLAIM-gated invitation / claim helpers -----
+//
+// These endpoints exist ONLY to let the harness drive scenario 9
+// (owner invitation + claim) without a Playwright browser. They
+// expose pending invitations and complete claims with a synthetic
+// OwnerSession. 404 by default. MUST NOT be enabled in production.
+
+app.get("/e2e/last-invitation", (c) => {
+  if (!E2E_CLAIM) {
+    return c.json({ error: { code: "not_found", message: "Not found" } }, 404);
+  }
+  if (capturedInvitations.length === 0) {
+    return c.json(
+      { error: { code: "not_found", message: "no invitations captured" } },
+      404,
+    );
+  }
+  return c.json(capturedInvitations[capturedInvitations.length - 1]);
+});
+
+app.post("/e2e/claim", async (c) => {
+  if (!E2E_CLAIM) {
+    return c.json({ error: { code: "not_found", message: "Not found" } }, 404);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  const token = typeof body?.token === "string" ? body.token : null;
+  const email = typeof body?.email === "string" ? body.email : null;
+  if (!token || !email) {
+    return c.json(
+      {
+        error: {
+          code: "malformed_request",
+          message: "token and email required",
+        },
+      },
+      400,
+    );
+  }
+  // Build a synthetic OwnerSession proving the human "authenticated"
+  // by email. The real ceremony would route through a magic-link
+  // + cookie session at the /claim browser page; we shortcut to the
+  // same input the SDK requires.
+  const session: OwnerSession = {
+    authenticated: { type: "email", value: email },
+    userId: `e2e-user:${email.toLowerCase()}`,
+    authenticatedAt: new Date().toISOString(),
+  };
+  const claimUrl = `${PUBLIC_BASE_URL.replace(/\/$/, "")}/afauth/v1/claim/${token}`;
+  const fakeReq = new Request(claimUrl, { method: "POST" });
+  return wrap(() => server.handleClaimCompletion(fakeReq, session));
+});
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
   // eslint-disable-next-line no-console

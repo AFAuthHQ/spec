@@ -755,6 +755,87 @@ async function scenarioTrustAttestation(opts) {
   assert(entries[0].state === 'UNCLAIMED', `expected UNCLAIMED, got ${entries[0].state}`);
 }
 
+/**
+ * Scenario 9: owner invitation + claim (§7).
+ *
+ * The heart of the spec: an UNCLAIMED account becomes CLAIMED
+ * after a human completes the two-step verify ceremony.
+ *
+ *   - CLI: `afauth invite alice@example.com` against the ref server
+ *     → server creates pending invitation, the e2e email handler
+ *     captures the magic-link details into memory
+ *   - harness: GET /e2e/last-invitation → claim token + URL
+ *   - harness: POST /e2e/claim with {token, email}; the ref server
+ *     synthesises an OwnerSession for that email and calls the
+ *     SDK's handleClaimCompletion, transitioning the account
+ *   - CLI: `accounts show --refresh` → state is now CLAIMED, owner
+ *     identity is the synthetic human
+ *
+ * Catches: drift between SDK's invitation token generation /
+ * recipient handler contract / claim completion / owner-binding
+ * persistence. No mock fits in this loop.
+ */
+async function scenarioOwnerInvitationClaim(opts) {
+  const ownerEmail = `e2e-owner-${Date.now()}@example.com`;
+
+  // 1-2. Setup: init + signup.
+  let r = await runCli(opts, ['init']);
+  assert(r.code === 0, `init: ${r.stderr}`);
+  r = await runCli(opts, ['signup', opts.serverBase]);
+  assert(r.code === 0, `signup: ${r.stderr}`);
+
+  // 3. afauth invite — agent kicks off the owner-binding ceremony.
+  r = await runCli(opts, ['invite', ownerEmail, '--service', opts.serverBase]);
+  assert(r.code === 0, `invite exit ${r.code}: ${r.stderr}`);
+  assert(
+    /invitation .* \(state=INVITED/.test(r.stdout),
+    `invite stdout missing INVITED state: ${r.stdout}`,
+  );
+
+  // 4. The reference server captured the magic-link details.
+  let res = await fetch(opts.serverBase + '/e2e/last-invitation');
+  assert(res.ok, `last-invitation fetch failed: ${res.status}`);
+  const captured = await res.json();
+  assert(
+    captured.recipient && captured.recipient.value === ownerEmail,
+    `captured invitation recipient mismatch: ${JSON.stringify(captured.recipient)}`,
+  );
+  assert(
+    typeof captured.claim_token === 'string' && captured.claim_token.length > 0,
+    'captured invitation missing claim_token',
+  );
+
+  // 5. Drive claim completion. The /e2e/claim endpoint synthesises
+  //    an OwnerSession from the email and calls the SDK's
+  //    handleClaimCompletion.
+  res = await fetch(opts.serverBase + '/e2e/claim', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: captured.claim_token, email: ownerEmail }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`e2e claim failed: ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const claimResp = await res.json();
+  assert(
+    claimResp.state === 'CLAIMED',
+    `claim response state expected CLAIMED, got ${claimResp.state}`,
+  );
+
+  // 6. The CLI confirms the new state via accounts show --refresh.
+  //    `accounts show` already emits JSON unconditionally.
+  r = await runCli(opts, [
+    'accounts', 'show', opts.serverBase, '--refresh',
+  ]);
+  assert(r.code === 0, `accounts show --refresh exit ${r.code}: ${r.stderr}`);
+  const entry = JSON.parse(r.stdout);
+  assert(
+    entry.state === 'CLAIMED',
+    `accounts show state expected CLAIMED, got ${entry.state}`,
+  );
+}
+
 const SCENARIOS = {
   'init-signup': scenarioInitSignup,
   'pre-claim-key-rotate': scenarioPreClaimKeyRotate,
@@ -764,6 +845,7 @@ const SCENARIOS = {
   'cross-service-portability': scenarioCrossServicePortability,
   'replay-expired': scenarioReplayExpired,
   'trust-attestation': scenarioTrustAttestation,
+  'owner-invitation-claim': scenarioOwnerInvitationClaim,
 };
 
 // ---------- runner ----------

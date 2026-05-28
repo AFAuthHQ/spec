@@ -132,6 +132,11 @@ services:
       # JwksAttestor refuses http URLs; the reference-server uses a
       # LooseJwksAttestor shim for this fixture only.
       ATTESTOR_TRUST_JWKS_URL: http://trust:3000/.well-known/jwks.json
+      # E2E_CLAIM swaps the email RecipientHandler for a capturing
+      # one and enables /e2e/last-invitation + /e2e/claim — used by
+      # scenario 9 to drive owner-invitation → claim without a
+      # browser. MUST NOT be set in production.
+      E2E_CLAIM: "1"
     depends_on:
       - trust
     ports:
