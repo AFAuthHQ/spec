@@ -1,0 +1,6 @@
+.work/
+node_modules/
+reference-server/dist/
+reference-server/node_modules/
+*.log
+.DS_Store

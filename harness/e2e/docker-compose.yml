@@ -1,0 +1,127 @@
+# AFAuth e2e harness — dependency-side stack.
+#
+# Brings up trust, registry, and a reference @afauthhq/server, each
+# with its own postgres + redis. The reference server is built from
+# this directory; trust and registry are built from sibling source
+# trees pointed to by E2E_TRUST_DIR / E2E_REGISTRY_DIR (default:
+# ../../../trust and ../../../registry, the workspace layout).
+#
+# Host ports:
+#   trust            → 4001
+#   registry         → 4002
+#   reference-server → 4003
+#
+# Internal-only (no host exposure):
+#   trust postgres, trust redis, registry postgres, registry redis.
+
+services:
+  trust-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: trust
+      POSTGRES_PASSWORD: trust
+      POSTGRES_DB: trust
+    volumes:
+      - trust_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trust"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  trust-redis:
+    image: redis:7-alpine
+    volumes:
+      - trust_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  trust:
+    build:
+      context: ${E2E_TRUST_DIR:-../../../trust}
+    depends_on:
+      trust-postgres:
+        condition: service_healthy
+      trust-redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://trust:trust@trust-postgres:5432/trust
+      REDIS_URL: redis://trust-redis:6379
+      PUBLIC_BASE_URL: http://localhost:4001
+      JWKS_PUBLIC_URL: http://localhost:4001/.well-known/jwks.json
+      # e2e-only secrets — these are public-by-construction and MUST
+      # NOT be reused in any real deployment.
+      TRUST_SESSION_SECRET: e2e-session-secret-do-not-use-in-production-xxxxx
+      TRUST_ADMIN_SECRET: e2e-admin-secret-1234567890
+      TRUST_KEK_BASE64: q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=
+      TRUST_PSEUDONYM_KEY_BASE64: zc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3NzQ==
+      EMAIL_PROVIDER: stdout
+      EMAIL_FROM: no-reply@e2e.afauth.local
+    ports:
+      - "4001:3000"
+
+  registry-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: registry
+      POSTGRES_DB: registry
+    volumes:
+      - registry_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  registry-redis:
+    image: redis:7-alpine
+    volumes:
+      - registry_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  registry:
+    build:
+      context: ${E2E_REGISTRY_DIR:-../../../registry}
+    depends_on:
+      registry-postgres:
+        condition: service_healthy
+      registry-redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://registry:registry@registry-postgres:5432/registry
+      REDIS_URL: redis://registry-redis:6379
+      PUBLIC_BASE_URL: http://localhost:4002
+      REGISTRY_ADMIN_SECRET: e2e-registry-admin-secret-1234567890
+      REGISTRY_CRON_SECRET: e2e-registry-cron-secret-1234567890
+    ports:
+      - "4002:3000"
+
+  reference-server:
+    build:
+      context: ./reference-server
+    environment:
+      PORT: "3000"
+      PUBLIC_BASE_URL: http://localhost:4003
+      SERVICE_DID: did:web:localhost%3A4003
+    ports:
+      - "4003:3000"
+
+volumes:
+  trust_pg:
+  trust_redis:
+  registry_pg:
+  registry_redis:

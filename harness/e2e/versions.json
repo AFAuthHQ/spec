@@ -1,0 +1,7 @@
+{
+  "_comment": "SHAs pinned by ADR-0005 §5. Each impl repo's VERSION file SHOULD reference this file's spec_sha; harness CI matrix runs against these pins on the producer side. Update bumps must update all four together.",
+  "spec_sha": "HEAD",
+  "trust_sha": "main",
+  "registry_sha": "main",
+  "typescript_sdk_sha": "main"
+}
