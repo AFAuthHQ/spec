@@ -13,7 +13,7 @@ For protocol-primitive conformance (vectors only), see the sibling
 
 ## Status
 
-Six scenarios, all passing locally:
+Seven scenarios, all passing locally:
 
 | Scenario | What it exercises |
 |---|---|
@@ -23,6 +23,7 @@ Six scenarios, all passing locally:
 | `negatives` | §11.1 error envelope conformance on unsigned probes (locks in the `AFAuthError.toResponse()` wiring on the reference server) |
 | `registry-roundtrip` | AFAP-0003 service directory; seed a listing via `REGISTRY_E2E_DIRECT_INSERT`, look it up by DID and via list-with-filter |
 | `cross-service-portability` | §D.1 portability; same agent key signs up on two reference servers, two independent UNCLAIMED rows, both bound to the same DID |
+| `replay-expired` | §5.6 replay protection + expired-signature; uses an inline RFC 9421 signer to craft crafted probes and verify the live envelope (`expired_signature`, `replayed_nonce`) |
 
 Not yet covered (tracked as follow-on in ADR-0005 §Status):
 
@@ -31,8 +32,6 @@ Not yet covered (tracked as follow-on in ADR-0005 §Status):
 - §10 attestation presented to a service — needs the reference server
   to be configured as an attestor consumer (JWKS fetch + recognized
   issuer)
-- Replay-window + expired-timestamp probes (need a custom signer in
-  the harness, parallel to `@afauthhq/agent`)
 
 ## Layout
 

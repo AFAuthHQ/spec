@@ -27,6 +27,7 @@
 'use strict';
 
 const { spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -136,6 +137,71 @@ function decodeJwtPayload(jwt) {
   const padded = parts[1] + '='.repeat((4 - (parts[1].length % 4)) % 4);
   const b64 = padded.replace(/-/g, '+').replace(/_/g, '/');
   return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+}
+
+// ---------- inline signer (replay / expired scenarios) ----------
+//
+// Self-contained RFC 9421 signer just enough to craft a few crafted
+// probes. Avoids pulling in `@afauthhq/agent` as an npm dep —
+// keeping the harness zero-deps means CI's `up.sh && node run.js`
+// stays a two-command setup.
+//
+// Limitations: handles only `@method` + `@target-uri` covered
+// components (no body / content-digest). Good enough for the GET
+// /accounts/me probe surface; not a general-purpose signer.
+
+// PKCS#8 prefix for an Ed25519 private key carrying a 32-byte raw seed.
+const ED25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
+
+function loadAgentFromKeyJson(keyJsonPath) {
+  const json = JSON.parse(fs.readFileSync(keyJsonPath, 'utf8'));
+  const seed = Buffer.from(json.private_key_seed_hex, 'hex');
+  if (seed.length !== 32) {
+    throw new Error(`expected 32-byte Ed25519 seed, got ${seed.length}`);
+  }
+  const der = Buffer.concat([ED25519_PKCS8_PREFIX, seed]);
+  const privateKey = crypto.createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
+  return { did: json.did_key, privateKey };
+}
+
+function buildCanonicalSignInput({ method, targetUri, params, covered }) {
+  const lines = [];
+  for (const c of covered) {
+    if (c === '@method') lines.push(`"@method": ${method}`);
+    else if (c === '@target-uri') lines.push(`"@target-uri": ${targetUri}`);
+    else throw new Error(`inline signer: unsupported covered component ${c}`);
+  }
+  const list = covered.map((c) => `"${c}"`).join(' ');
+  const paramStr =
+    `created=${params.created};` +
+    `expires=${params.expires};` +
+    `nonce="${params.nonce}";` +
+    `keyid="${params.keyid}";` +
+    `alg="${params.alg}"`;
+  lines.push(`"@signature-params": (${list});${paramStr}`);
+  return lines.join('\n');
+}
+
+function signGet(agent, url, opts = {}) {
+  const created = opts.created ?? Math.floor(Date.now() / 1000);
+  const expires = opts.expires ?? created + 60;
+  const nonce = opts.nonce ?? crypto.randomBytes(16).toString('hex');
+  const covered = ['@method', '@target-uri'];
+  const params = { created, expires, nonce, keyid: agent.did, alg: 'ed25519' };
+  const canonical = buildCanonicalSignInput({
+    method: 'GET',
+    targetUri: url,
+    params,
+    covered,
+  });
+  const sig = crypto.sign(null, Buffer.from(canonical, 'utf8'), agent.privateKey);
+  const list = covered.map((c) => `"${c}"`).join(' ');
+  return {
+    'signature-input':
+      `sig1=(${list});created=${created};expires=${expires};` +
+      `nonce="${nonce}";keyid="${agent.did}";alg="ed25519"`,
+    signature: `sig1=:${sig.toString('base64')}:`,
+  };
 }
 
 /**
@@ -557,6 +623,55 @@ async function scenarioCrossServicePortability(opts) {
   assert(a.agent_did === agentDid, `A agent_did != key.json did`);
 }
 
+/**
+ * Scenario 7: replay protection + expired-signature probes (§5.6).
+ *
+ * Uses the inline signer to craft signed GETs that fail in
+ * specific ways:
+ *   - well-formed signature with expires < now → 401 expired_signature
+ *   - well-formed signature with nonce reused → 401 replayed_nonce
+ *
+ * The vector-level conformance harness (`spec/harness/run.js`)
+ * already checks the canonical-input format of these errors; this
+ * scenario verifies the live HTTP behaviour all the way to the
+ * envelope. Catches regressions where the SDK accepts a stale
+ * `expires` or fails to record a nonce in the NonceStore.
+ */
+async function scenarioReplayExpired(opts) {
+  // 1. Setup agent + signup, so a valid account exists for the
+  //    crafted probes to target.
+  let r = await runCli(opts, ['init']);
+  assert(r.code === 0, `init: ${r.stderr}`);
+  r = await runCli(opts, ['signup', opts.serverBase]);
+  assert(r.code === 0, `signup: ${r.stderr}`);
+
+  const agent = loadAgentFromKeyJson(path.join(opts.tmpDir, 'key.json'));
+  const targetUri = opts.serverBase + '/afauth/v1/accounts/me';
+
+  // 2. Baseline: a fresh signed request succeeds.
+  let headers = signGet(agent, targetUri);
+  let res = await fetch(targetUri, { method: 'GET', headers });
+  assert(res.status === 200, `baseline expected 200, got ${res.status}`);
+
+  // 3. Expired-signature probe: created/expires are well in the past.
+  const past = Math.floor(Date.now() / 1000) - 600;
+  headers = signGet(agent, targetUri, { created: past, expires: past + 60 });
+  res = await fetch(targetUri, { method: 'GET', headers });
+  await assertErrorEnvelope(res, 401, 'expired_signature');
+
+  // 4. Replay probe: two signed requests with the same nonce. The
+  //    first succeeds, the second is rejected.
+  const sharedNonce = crypto.randomBytes(16).toString('hex');
+  const h1 = signGet(agent, targetUri, { nonce: sharedNonce });
+  res = await fetch(targetUri, { method: 'GET', headers: h1 });
+  assert(res.status === 200, `replay first call expected 200, got ${res.status}`);
+  // Re-sign with the same nonce but fresh timestamp — must still trip
+  // the NonceStore even though the canonical input differs.
+  const h2 = signGet(agent, targetUri, { nonce: sharedNonce });
+  res = await fetch(targetUri, { method: 'GET', headers: h2 });
+  await assertErrorEnvelope(res, 401, 'replayed_nonce');
+}
+
 const SCENARIOS = {
   'init-signup': scenarioInitSignup,
   'pre-claim-key-rotate': scenarioPreClaimKeyRotate,
@@ -564,6 +679,7 @@ const SCENARIOS = {
   'negatives': scenarioNegatives,
   'registry-roundtrip': scenarioRegistryRoundTrip,
   'cross-service-portability': scenarioCrossServicePortability,
+  'replay-expired': scenarioReplayExpired,
 };
 
 // ---------- runner ----------
