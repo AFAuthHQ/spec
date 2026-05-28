@@ -13,6 +13,7 @@ updated to reflect the supersession.
 | [0002](0002-raw-workers-no-framework.md) | Raw Cloudflare Workers, no router framework | Accepted |
 | [0003](0003-did-key-only-resolver.md) | `did:key`-only DID resolver in v0.1 | Accepted |
 | [0004](0004-sdk-api-shape.md) | SDK API shape: account store, claim session, signRequest | Accepted |
+| [0005](0005-e2e-interop-harness.md) | End-to-end interop harness location and contract | Accepted |
 
 ## Template
 
