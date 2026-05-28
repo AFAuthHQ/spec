@@ -13,6 +13,7 @@
 
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { AFAuthError } from "@afauthhq/core";
 import {
   consoleEmailHandler,
   MemoryAccountStore,
@@ -21,6 +22,21 @@ import {
   Server,
   type DiscoveryDocument,
 } from "@afauthhq/server";
+
+/**
+ * Run a Server handler and serialise AFAuthError throws as §11.1
+ * error envelopes. Without this wrapper Hono returns 500 on the
+ * happy AFAuthError-throw paths (invalid_signature, expired,
+ * replayed_nonce, etc.), which is wrong per the spec.
+ */
+async function wrap(fn: () => Promise<Response>): Promise<Response> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof AFAuthError) return err.toResponse();
+    throw err;
+  }
+}
 
 const PORT = Number(process.env["PORT"] ?? "3000");
 const PUBLIC_BASE_URL =
@@ -55,18 +71,20 @@ const app = new Hono();
 
 app.get("/healthz", (c) => c.json({ ok: true }));
 
-app.get("/.well-known/afauth", async (c) => server.handleDiscovery(c.req.raw));
+app.get("/.well-known/afauth", async (c) =>
+  wrap(() => server.handleDiscovery(c.req.raw)),
+);
 
 app.get("/afauth/v1/accounts/me", async (c) =>
-  server.handleAccountIntrospection(c.req.raw),
+  wrap(() => server.handleAccountIntrospection(c.req.raw)),
 );
 
 app.post("/afauth/v1/accounts/me/owner-invitation", async (c) =>
-  server.handleOwnerInvitation(c.req.raw),
+  wrap(() => server.handleOwnerInvitation(c.req.raw)),
 );
 
 app.post("/afauth/v1/accounts/me/keys/rotate", async (c) =>
-  server.handleKeyRotation(c.req.raw),
+  wrap(() => server.handleKeyRotation(c.req.raw)),
 );
 
 // Claim page is normally a real HTML page. For the harness it returns

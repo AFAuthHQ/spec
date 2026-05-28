@@ -60,7 +60,7 @@ services:
       TRUST_SESSION_SECRET: e2e-session-secret-do-not-use-in-production-xxxxx
       TRUST_ADMIN_SECRET: e2e-admin-secret-1234567890
       TRUST_KEK_BASE64: q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=
-      TRUST_PSEUDONYM_KEY_BASE64: zc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3NzQ==
+      TRUST_PSEUDONYM_KEY_BASE64: zc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc0=
       EMAIL_PROVIDER: stdout
       EMAIL_FROM: no-reply@e2e.afauth.local
     ports:
