@@ -40,7 +40,10 @@ This repository is the normative specification.
   npm i @afauthhq/core      # primitives shared by the above
   ```
 
-Both reference implementations track the v0.1 spec and are published at `0.1.0` (TypeScript SDK on npm under `@afauthhq/*`, CLI as binaries + Homebrew tap).
+Both reference implementations track the v0.1 spec. Current releases:
+
+- TypeScript SDK: `@afauthhq/{agent,server,worker}@0.2.0` + `@afauthhq/core@0.1.0` on npm — `0.2.0` adds the AFAP-0006 trust-attestor surface (`TrustClient`, `trustAttestor()`).
+- CLI: [`v0.3.0`](https://github.com/AFAuthHQ/cli/releases/tag/v0.3.0) — binaries + Homebrew tap, includes the `afauth trust` subcommand.
 
 Alternative implementations are welcome. The protocol is intentionally small and language-agnostic.
 
