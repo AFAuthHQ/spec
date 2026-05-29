@@ -51,5 +51,6 @@ The Appendix C corpus ships under [`../vectors/`](../vectors/):
 - **§C.4** — [`vectors/recipients/`](../vectors/recipients/): per-type normalisation rules with canonical forms.
 - **§C.5** — [`vectors/errors/`](../vectors/errors/): one envelope fixture per §11.3 reserved code.
 - **§C.6** — [`vectors/replay-window/`](../vectors/replay-window/): expired, future-dated, replay-invariant, and cross-keyid sequences.
+- **§C.7** — [`vectors/trust-attestation/`](../vectors/trust-attestation/): `afauth-trust` attestation JWTs — well-formed, runtime-only (no `sub_h`), and malformed `sub_h` cases (§10). Applies only to implementations that consume attestations.
 
 The executable harness at [`../harness/run.js`](../harness/run.js) runs every fixture against a reference verifier and exits non-zero on any failure. It exports its primitives (`buildCanonicalInput`, `verifySignature`, `checkDiscoveryDocument`, `normaliseRecipient`, …) so independent implementations can reuse them. Contributions of additional vectors are welcome via the proposals process (see [`../proposals/`](../proposals/README.md)).

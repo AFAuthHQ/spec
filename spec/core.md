@@ -1255,7 +1255,7 @@ The rotation is staged but not committed. The service emails Alice a confirmatio
 
 ## Appendix C: Test Vectors
 
-**Status:** Required for v0.1 final. The vectors below are the minimum a v0.1 implementation MUST pass to claim conformance. The full §C.1 through §C.6 corpus now ships under [`../vectors/`](../vectors/), and an executable harness at [`../harness/run.js`](../harness/run.js) verifies every committed vector against a reference verifier.
+**Status:** Required for v0.1 final. The vectors below are the minimum a v0.1 implementation MUST pass to claim conformance. The full §C.1 through §C.6 corpus (plus the optional §C.7 trust-attestation vectors for §10) now ships under [`../vectors/`](../vectors/), and an executable harness at [`../harness/run.js`](../harness/run.js) verifies every committed vector against a reference verifier.
 
 A reference test-only Ed25519 keypair is published alongside this specification at [`../vectors/keypair.json`](../vectors/keypair.json). The keypair is for protocol testing only and MUST NOT be used in production. The associated `did:key` identifier is:
 
@@ -1289,7 +1289,11 @@ For each reserved code in §11.3, an example error body. Implementations produci
 
 Sequence vectors illustrating: rejected expired signatures (`expires` in the past), rejected future-dated signatures (`created` in the future beyond skew), rejected replays within the window, and accepted nonce reuse across distinct `keyid` values (per §5.6).
 
-### C.7 Distribution
+### C.7 Trust attestations
+
+Vectors exercising verification of `afauth-trust` attestation JWTs (§10): a well-formed attestation, a runtime-only attestation that carries no `sub_h` binding, and malformed cases (missing `sub_h` when `verification` is present, and `sub_h` values that are too short or not `base64url`). Each vector carries the encoded JWT, the issuer JWKS, the verifier inputs, and the expected accept/reject decision. These vectors apply to implementations that consume attestations under the optional §10; the §C.1–§C.6 corpus remains the minimum for the core agent and service roles.
+
+### C.8 Distribution
 
 Vectors are published as machine-readable JSON files under [`../vectors/`](../vectors/) alongside this specification. Each vector file includes a `description`, the input under test, the expected output, and a reference to the section of this specification that it exercises. A minimum-viable conformance harness lives at [`../harness/run.js`](../harness/run.js); it loads every vector, runs the §C.1 and §C.2 checks against a reference verifier, and exits non-zero on any failure. Independent implementations are encouraged to contribute additional vectors via the proposals process.
 
