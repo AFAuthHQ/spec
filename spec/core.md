@@ -641,6 +641,8 @@ Behaviour by DID method:
 
 Implementations operating long-lived accounts SHOULD use `did:web` for this reason; see §3.1.
 
+Key rotation changes (for `did:key`) or re-keys (for `did:web`) the agent's verification key, but it does NOT change any attestor-issued `sub_h` (§10.4). `sub_h` is keyed on the principal behind the agent, not on the verification key, so an agent that re-links a rotated key to the same principal (§10.5.1) continues to present the same `sub_h` to each service. A service that keys per-human policy on `sub_h` therefore retains operator continuity across the agent's key rotations.
+
 ### 8.2 Post-claim key rotation
 
 After claim, rotation MUST require owner approval. Two flavours are defined:
@@ -786,7 +788,10 @@ An attestor MUST reject a binding-creation request that would establish a second
 
 #### 10.5.1 Rebinding
 
-When the existing binding is revoked or expires, the agent DID MAY be re-bound to the same or a different principal. The new binding produces a new `sub_h` for any `aud` reached by the new principal, computed per §10.4.3 from the new principal's identity. Consuming services MUST treat the change as a change of operator: a re-bound agent is, from the service's perspective, indistinguishable from a fresh registration of a new operator using the same agent DID.
+When the existing binding is revoked or expires, the agent DID MAY be re-bound to the same or a different principal. The two cases differ in their effect on `sub_h`:
+
+- **Re-binding to the same principal** — including re-linking a rotated verification key under a new agent DID (§8.1) — MUST yield the same `sub_h` for each `aud`, per the §10.4.2 stability property. `sub_h` is derived from the principal record, not from the binding instance or the agent's verification key, so a revoke-then-rebind and a key rotation are both transparent to the consuming service: it sees an unbroken operator.
+- **Re-binding to a different principal** produces a new `sub_h` for any `aud` reached by the new principal, computed per §10.4.3 from the new principal's identity. Consuming services MUST treat this as a change of operator: the re-bound agent is, from the service's perspective, indistinguishable from a fresh registration of a new operator using the same agent DID.
 
 #### 10.5.2 Rationale
 
