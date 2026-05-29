@@ -107,7 +107,10 @@ services:
       registry-redis:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      # Must NOT be production: registry refuses to boot when
+      # REGISTRY_E2E_DIRECT_INSERT (set below) is enabled under
+      # NODE_ENV=production. See registry/src/lib/config.ts.
+      NODE_ENV: development
       PORT: "3000"
       LOG_LEVEL: info
       DATABASE_URL: postgres://registry:registry@registry-postgres:5432/registry
