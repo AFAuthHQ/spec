@@ -18,9 +18,11 @@
 //
 //   AFAUTH_CLI_BIN        path to a built `afauth` binary (required
 //                         for CLI scenarios)
-//   AFAUTH_TRUST_BASE     URL of the trust service     (default: http://localhost:4001)
-//   AFAUTH_REGISTRY_BASE  URL of the registry service  (default: http://localhost:4002)
-//   AFAUTH_SERVER_BASE    URL of the reference server  (default: http://localhost:4003)
+//   AFAUTH_TRUST_BASE            URL of the trust service                (default: http://localhost:4001)
+//   AFAUTH_REGISTRY_BASE         URL of the registry service             (default: http://localhost:4002)
+//   AFAUTH_SERVER_BASE           URL of the reference server             (default: http://localhost:4003)
+//   AFAUTH_SERVER_BASE_B         URL of the second reference server      (default: http://localhost:4004)
+//   AFAUTH_SERVER_BASE_ATTESTED  URL of the attested-only reference srv  (default: http://localhost:4005)
 //
 // Exits non-zero on any failure.
 
@@ -37,6 +39,7 @@ const DEFAULTS = {
   registryBase: process.env.AFAUTH_REGISTRY_BASE || 'http://localhost:4002',
   serverBase: process.env.AFAUTH_SERVER_BASE || 'http://localhost:4003',
   serverBaseB: process.env.AFAUTH_SERVER_BASE_B || 'http://localhost:4004',
+  serverBaseAttested: process.env.AFAUTH_SERVER_BASE_ATTESTED || 'http://localhost:4005',
   cliBin: process.env.AFAUTH_CLI_BIN || '',
 };
 
@@ -108,6 +111,7 @@ async function preflight(opts) {
   const urls = [
     ['reference-server', opts.serverBase + '/healthz'],
     ['reference-server-b', opts.serverBaseB + '/healthz'],
+    ['reference-server-attested', opts.serverBaseAttested + '/healthz'],
     ['trust', opts.trustBase + '/healthz'],
     ['registry', opts.registryBase + '/healthz'],
   ];
@@ -756,7 +760,85 @@ async function scenarioTrustAttestation(opts) {
 }
 
 /**
- * Scenario 9: owner invitation + claim (§7).
+ * Scenario 9: attested_only rejection (§9.2).
+ *
+ * Counterpart to scenario 8: that one proves the accept path
+ * (valid attestation lets signup through). This one proves the
+ * reject path on a service that REQUIRES attestation, at BOTH
+ * layers of defence:
+ *
+ *   (a) CLI client-side guard — `afauth signup <attested-server>`
+ *       with no trust link short-circuits with a helpful error
+ *       before hitting the wire. Avoids a wasted round-trip.
+ *
+ *   (b) Server-side §9.2 enforcement — a raw signed GET /accounts/me
+ *       with no `AFAuth-Attestation` header is rejected by the
+ *       server with 401 + error code `attestation_required`. This
+ *       is the part the spec mandates; the CLI guard is just UX.
+ *
+ * No ledger row gets written in either case.
+ *
+ * Catches: regressions in the SDK's §9.2 enforcement order (must
+ * reject BEFORE creating the account row), discovery-doc shape
+ * drift on the `billing` block, and CLI fail-fast wiring for
+ * attested_only services.
+ */
+async function scenarioAttestedOnlyReject(opts) {
+  // 1. Discovery doc must actually advertise attested_only — without
+  //    this the rest of the scenario doesn't prove anything.
+  const disc = await (await fetch(opts.serverBaseAttested + '/.well-known/afauth')).json();
+  assert(
+    disc.billing && disc.billing.unclaimed_mode === 'attested_only',
+    `discovery: expected unclaimed_mode=attested_only, got ${JSON.stringify(disc.billing)}`,
+  );
+  assert(
+    Array.isArray(disc.billing.accepted_attestors) &&
+      disc.billing.accepted_attestors.includes('afauth-trust'),
+    `discovery: accepted_attestors missing afauth-trust: ${JSON.stringify(disc.billing.accepted_attestors)}`,
+  );
+
+  // 2. afauth init — fresh key. No trust link, no attestation token.
+  let r = await runCli(opts, ['init']);
+  assert(r.code === 0, `init: ${r.stderr}`);
+
+  // 3. CLI guard: `afauth signup` against an attested_only service
+  //    with no trust link MUST fail fast, before hitting the server.
+  r = await runCli(opts, ['signup', opts.serverBaseAttested]);
+  assert(
+    r.code !== 0,
+    `signup against attested-only server should have failed, exit=0 stdout=${r.stdout}`,
+  );
+  assert(
+    /trust attestation/i.test(r.stderr) && /afauth trust link/.test(r.stderr),
+    `stderr should surface the missing-trust-link guard, got: ${r.stderr}`,
+  );
+
+  // 4. Server-side enforcement (the spec part). Craft a raw signed
+  //    GET /accounts/me with NO AFAuth-Attestation header and send
+  //    it directly. §9.2 says the server MUST 401 with
+  //    `attestation_required` and MUST NOT create the account row.
+  const agent = loadAgentFromKeyJson(path.join(opts.tmpDir, 'key.json'));
+  const targetUri = opts.serverBaseAttested + '/afauth/v1/accounts/me';
+  const headers = signGet(agent, targetUri);
+  const res = await fetch(targetUri, { method: 'GET', headers });
+  await assertErrorEnvelope(res, 401, 'attestation_required');
+
+  // 5. No ledger row was written — §9.2 requires the rejection to
+  //    happen before any state transition. The CLI guard didn't get
+  //    far enough to write either, but check anyway.
+  const ledgerPath = path.join(opts.tmpDir, 'accounts.json');
+  if (fs.existsSync(ledgerPath)) {
+    const ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+    const entries = Object.values(ledger.accounts || {});
+    assert(
+      entries.length === 0,
+      `expected 0 ledger entries after rejected signup, got ${entries.length}`,
+    );
+  }
+}
+
+/**
+ * Scenario 10: owner invitation + claim (§7).
  *
  * The heart of the spec: an UNCLAIMED account becomes CLAIMED
  * after a human completes the two-step verify ceremony.
@@ -845,6 +927,7 @@ const SCENARIOS = {
   'cross-service-portability': scenarioCrossServicePortability,
   'replay-expired': scenarioReplayExpired,
   'trust-attestation': scenarioTrustAttestation,
+  'attested-only-reject': scenarioAttestedOnlyReject,
   'owner-invitation-claim': scenarioOwnerInvitationClaim,
 };
 

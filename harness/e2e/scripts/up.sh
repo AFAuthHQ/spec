@@ -48,13 +48,15 @@ wait_for() {
 }
 
 echo "[e2e] waiting for services (cap ${WAIT}s each)..."
-wait_for trust              http://localhost:4001/healthz
-wait_for registry           http://localhost:4002/healthz
-wait_for reference-server   http://localhost:4003/healthz
-wait_for reference-server-b http://localhost:4004/healthz
+wait_for trust                     http://localhost:4001/healthz
+wait_for registry                  http://localhost:4002/healthz
+wait_for reference-server          http://localhost:4003/healthz
+wait_for reference-server-b        http://localhost:4004/healthz
+wait_for reference-server-attested http://localhost:4005/healthz
 
 echo "[e2e] stack is up:"
-echo "  trust              → http://localhost:4001"
-echo "  registry           → http://localhost:4002"
-echo "  reference-server   → http://localhost:4003"
-echo "  reference-server-b → http://localhost:4004"
+echo "  trust                     → http://localhost:4001"
+echo "  registry                  → http://localhost:4002"
+echo "  reference-server          → http://localhost:4003"
+echo "  reference-server-b        → http://localhost:4004"
+echo "  reference-server-attested → http://localhost:4005"

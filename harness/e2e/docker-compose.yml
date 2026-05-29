@@ -160,6 +160,26 @@ services:
     ports:
       - "4004:3000"
 
+  # Third reference server with §9.2 attested_only enforcement turned ON
+  # — used by the attested-only-reject scenario to prove that un-attested
+  # signups are rejected with 401 attestation_required. Wires the same
+  # trust JWKS as `reference-server` so the server has an attestor
+  # configured (avoids the "declared attested_only but no attestor" 503
+  # misconfig path, which is a different failure mode).
+  reference-server-attested:
+    build:
+      context: ./reference-server
+    environment:
+      PORT: "3000"
+      PUBLIC_BASE_URL: http://localhost:4005
+      SERVICE_DID: did:web:localhost%3A4005
+      ATTESTOR_TRUST_JWKS_URL: http://trust:3000/.well-known/jwks.json
+      ATTESTED_ONLY: "1"
+    depends_on:
+      - trust
+    ports:
+      - "4005:3000"
+
 volumes:
   trust_pg:
   trust_redis:

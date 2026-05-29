@@ -13,7 +13,7 @@ For protocol-primitive conformance (vectors only), see the sibling
 
 ## Status
 
-Nine scenarios, all passing locally:
+Ten scenarios, all passing locally:
 
 | Scenario | What it exercises |
 |---|---|
@@ -25,6 +25,7 @@ Nine scenarios, all passing locally:
 | `cross-service-portability` | §D.1 portability; same agent key signs up on two reference servers, two independent UNCLAIMED rows, both bound to the same DID |
 | `replay-expired` | §5.6 replay protection + expired-signature; uses an inline RFC 9421 signer to craft crafted probes and verify the live envelope (`expired_signature`, `replayed_nonce`) |
 | `trust-attestation` | §10 + AFAP-0006 attestation presented to a service; CLI mints an `afauth-trust` JWT via the trust container and the reference server verifies it against trust's JWKS over the docker network |
+| `attested-only-reject` | §9.2 attested_only enforcement; the third reference server runs with `ATTESTED_ONLY=1` and rejects un-attested signups with 401 `attestation_required`, no ledger row written |
 | `owner-invitation-claim` | §7 owner-binding ceremony; CLI invites, the reference server's e2e email handler captures the magic-link details, `/e2e/claim` drives `handleClaimCompletion` with a synthetic `OwnerSession`, account flips UNCLAIMED → CLAIMED |
 
 All ADR-0005 §Status follow-ons are now covered.
