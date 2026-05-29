@@ -48,7 +48,10 @@ services:
       trust-redis:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      # Must NOT be production: trust refuses to boot when
+      # TRUST_E2E_AUTOCONFIRM (set below) is enabled under
+      # NODE_ENV=production. See trust/src/lib/config.ts.
+      NODE_ENV: development
       PORT: "3000"
       LOG_LEVEL: info
       DATABASE_URL: postgres://trust:trust@trust-postgres:5432/trust
