@@ -25,7 +25,7 @@ This repository is the normative specification.
     - [`replay-window/`](vectors/replay-window/) (§C.6 — expired / future-dated / replay / cross-keyid)
 - [`harness/`](harness/) — executable conformance harness that runs every committed vector
 - [`implementation/`](implementation/) — implementation scope, ADRs, and SDK API sketch (`sdk-v0.1.d.ts`) for the reference TypeScript SDK
-- [`proposals/`](proposals/README.md) — AFAuth Protocol Proposals (AFAPs)
+- [`proposals/`](proposals/README.md) — AFAuth Protocol Proposals (AFAPs), including [`0006-afauth-trust-attestor.md`](proposals/0006-afauth-trust-attestor.md): the canonical §10 trust attestor (`trust.afauth.org`) that makes a service's `attested_only` mode reachable from a clean deployment
 
 ## Reference implementations
 
