@@ -1,8 +1,8 @@
 # AFAuth Protocol Proposals (AFAPs)
 
-**Status:** Process under development.
+**Status:** Active.
 
-This directory holds AFAuth Protocol Proposals — design changes to the protocol that go beyond editorial fixes. The process is intentionally light-touch for the working-draft phase and is expected to formalise as v0.1 stabilises.
+This directory holds AFAuth Protocol Proposals — design changes to the protocol that go beyond editorial fixes. The process is intentionally light-touch.
 
 ## When to file an AFAP
 
@@ -33,4 +33,4 @@ The first AFAP filed will document the AFAP process itself.
 
 ## Status
 
-No AFAPs have been filed yet. The working-draft of `spec/core.md` is editor-driven; once v0.1 stabilises, all normative changes will route through this directory.
+The `spec/core.md` baseline is editor-driven; all normative changes route through this directory.

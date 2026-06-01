@@ -11,8 +11,8 @@
 Define a non-normative public **service directory** — a list of services
 that have voluntarily announced AFAuth support — operated at
 `https://registry.afauth.org` and mirrorable by anyone. The directory's
-sole purpose is announcement and cold-start discovery for early
-adopters; it imposes no requirements on either agents or services and
+sole purpose is announcement and cold-start discovery; it imposes no
+requirements on either agents or services and
 introduces no new fields on the `/.well-known/afauth` document.
 
 Membership is **opt-in**, **self-serve via the protocol's own signature
@@ -500,7 +500,7 @@ architectural signal).
 ## Alternatives considered
 
 - **No directory at all.** Rejected. Forecloses the cold-start
-  flywheel for early adopters and concedes the discovery layer to
+  flywheel and concedes the discovery layer to
   third parties whose schemas the protocol does not control.
 
 - **Static GitHub repo** (e.g., `awesome-afauth`). Considered.

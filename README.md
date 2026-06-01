@@ -8,7 +8,7 @@ This repository is the normative specification.
 
 ## Status
 
-**v0.1 — Working Draft.** Not yet final. Comments and proposals welcome.
+**v0.1 — Stable.** Comments and proposals welcome.
 
 ## Layout
 

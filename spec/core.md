@@ -1,8 +1,8 @@
 # AFAuth Protocol — Core Specification
 
-**Version:** 0.1 (working draft)
+**Version:** 0.1
 **Date:** 2026-05-18
-**Status:** Working draft; comments and proposals welcome.
+**Status:** Stable; comments and proposals welcome.
 **Editors:** AFAuth contributors
 **License:** [CC-BY 4.0](../LICENSE)
 
@@ -1255,7 +1255,7 @@ The rotation is staged but not committed. The service emails Alice a confirmatio
 
 ## Appendix C: Test Vectors
 
-**Status:** Required for v0.1 final. The vectors below are the minimum a v0.1 implementation MUST pass to claim conformance. The full §C.1 through §C.6 corpus (plus the optional §C.7 trust-attestation vectors for §10) now ships under [`../vectors/`](../vectors/), and an executable harness at [`../harness/run.js`](../harness/run.js) verifies every committed vector against a reference verifier.
+**Status:** Required for v0.1 conformance. The vectors below are the minimum a v0.1 implementation MUST pass to claim conformance. The full §C.1 through §C.6 corpus (plus the optional §C.7 trust-attestation vectors for §10) now ships under [`../vectors/`](../vectors/), and an executable harness at [`../harness/run.js`](../harness/run.js) verifies every committed vector against a reference verifier.
 
 A reference test-only Ed25519 keypair is published alongside this specification at [`../vectors/keypair.json`](../vectors/keypair.json). The keypair is for protocol testing only and MUST NOT be used in production. The associated `did:key` identifier is:
 
@@ -1405,4 +1405,4 @@ A verifier that runs the steps in §5.5 against the test vectors of Appendix C a
 
 ---
 
-*End of AFAuth Protocol v0.1 working draft.*
+*End of AFAuth Protocol v0.1.*

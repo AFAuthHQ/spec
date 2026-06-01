@@ -64,4 +64,4 @@ These vectors cover the JWT-shape and verification rules in §10.4. They do not 
 
 ## Harness
 
-The harness in `../../harness/run.js` does not yet consume these vectors — it focuses on signed-request verification per §5. Adding attestation coverage is tracked separately.
+The harness in `../../harness/run.js` focuses on signed-request verification per §5; attestation-vector coverage is tracked separately.

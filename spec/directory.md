@@ -1,7 +1,7 @@
 # AFAuth Service Directory
 
 **Status:** Informational
-**Version:** 0.1 (working draft)
+**Version:** 0.1
 **Date:** 2026-05-25
 **License:** [CC-BY 4.0](../LICENSE)
 
@@ -18,9 +18,8 @@
 A non-normative public **service directory** — a list of services
 that have voluntarily announced AFAuth support — operated at
 `https://registry.afauth.org` and mirrorable by anyone. The
-directory's sole purpose is announcement and cold-start discovery
-for early adopters; it imposes no requirements on either agents or
-services and introduces no new fields on the `/.well-known/afauth`
+directory's sole purpose is announcement and cold-start discovery;
+it imposes no requirements on either agents or services and introduces no new fields on the `/.well-known/afauth`
 document.
 
 Membership is **opt-in**, **self-serve via proof of control of the

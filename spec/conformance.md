@@ -1,6 +1,6 @@
 # AFAuth Conformance
 
-**Status:** Working draft alongside `core.md`. The §C.1 through §C.6 test-vector corpus and the executable harness at [`../harness/run.js`](../harness/run.js) ship in this repository; an implementation that passes every committed vector through its own verifier may claim v0.1 conformance for its declared role.
+**Status:** Stable alongside `core.md`. The §C.1 through §C.6 test-vector corpus and the executable harness at [`../harness/run.js`](../harness/run.js) ship in this repository; an implementation that passes every committed vector through its own verifier may claim v0.1 conformance for its declared role.
 
 This document describes what an AFAuth implementation must support to call itself "AFAuth-conformant." It is the authoritative reference for that claim; the protocol specification ([`core.md`](core.md)) provides the underlying normative requirements.
 
