@@ -27,6 +27,7 @@ A conforming service MUST:
 7. **`attested_only` honouring (§9, §6.3).** Services declaring `unclaimed_mode = "attested_only"` MUST reject implicit signup lacking attestation with `attestation_required`, without creating the account.
 8. **Error codes (§11).** Use the reserved codes for the conditions they describe.
 9. **Recipient types (§7.7).** Accept at minimum the `email` recipient type. Declare any additional supported types in `recipient_types` of the discovery doc. Reject unsupported types in invitation requests with `400 Bad Request` and `unsupported_recipient_type`.
+10. **Owner re-key & revoke (§8.2, §8.4).** A service that advertises `key_rekey` / `key_revocation` MUST gate them on a fresh owner-authenticated session (§7.5) — never the agent signature — and MUST verify the session owns the target account: reject a stale session with `owner_session_too_stale`, a non-owner with `owner_authentication_required` (and no session with `401`), and a non-`CLAIMED` target with `not_claimed`. After revoke — and, for the old DID, after re-key — a request signed by the retired key MUST fail with `401 revoked_key`.
 
 ## Agent conformance (planned probes)
 

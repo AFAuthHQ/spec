@@ -229,7 +229,7 @@ The full JSON Schema is provided alongside this specification at [`../schemas/we
 
 - `afauth_version` (string): The protocol version this service speaks. For this specification, the value is `"0.1"`.
 - `service_did` (string): A DID identifying the service. Implementations SHOULD use `did:web:<host>` so the service's identity is anchored in DNS and TLS rather than in a self-issued public key. `did:key:...` is permitted but provides no authority anchor — a hostile party that controls the connection on which the discovery document is fetched can claim any `did:key` value — and is appropriate only for niche service-to-service contexts. See §12.8 for the related threat model.
-- `endpoints` (object): URLs for the protocol's endpoints. Paths MAY be absolute or relative to the discovery document's origin. Members defined in this version: `accounts`, `owner_invitation`, `claim_page`, `claim_completion`, `key_rotation`. The token is appended as the final path segment of `claim_completion` (see §7.4).
+- `endpoints` (object): URLs for the protocol's endpoints. Paths MAY be absolute or relative to the discovery document's origin. Members defined in this version: `accounts`, `owner_invitation`, `claim_page`, `claim_completion`, `key_rotation`, `key_rekey` (§8.2 owner-initiated re-key), `key_revocation` (§8.4 owner revoke). The token is appended as the final path segment of `claim_completion` (see §7.4).
 - `signature_algorithms` (array of strings): Algorithms the service accepts. MUST include `"ed25519"` for conformance.
 
 ### 4.4 Optional fields
@@ -610,6 +610,8 @@ Future versions of this specification, or AFAPs that update this registry, MAY a
 
 ## 8. Key Management
 
+Routine, time-scheduled key rotation is NOT required for AFAuth's Ed25519 verification keys: signing keys have no usage-based wear, so the drivers for changing a key are compromise recovery and algorithm migration — not a calendar. The operations below are framed around those drivers: pre-claim self-rotation (§8.1), owner-approved post-claim re-key (§8.2), and owner-initiated revocation as the authoritative recovery lever (§8.4), with §8.5 stating what that recovery does and does not reach.
+
 ### 8.1 Pre-claim key rotation
 
 While the account is in `UNCLAIMED` or `INVITED` state, an agent MAY rotate its verification key by signing a rotation request with the old key:
@@ -643,15 +645,42 @@ Implementations operating long-lived accounts SHOULD use `did:web` for this reas
 
 Key rotation changes (for `did:key`) or re-keys (for `did:web`) the agent's verification key, but it does NOT change any attestor-issued `sub_h` (§10.4). `sub_h` is keyed on the principal behind the agent, not on the verification key, so an agent that re-links a rotated key to the same principal (§10.5.1) continues to present the same `sub_h` to each service. A service that keys per-human policy on `sub_h` therefore retains operator continuity across the agent's key rotations.
 
-### 8.2 Post-claim key rotation
+### 8.2 Post-claim key rotation (re-key)
 
-After claim, rotation MUST require owner approval. Two flavours are defined:
+After claim, a key change is an owner-binding operation: it MUST require a fresh owner-authenticated session (§7.5) and MUST NOT complete on the agent's signature alone. This is the resume half of revoke → re-key (§8.4) — an owner whose agent key is lost or compromised installs a fresh key without abandoning the account. Two flavours are defined.
 
-**Agent-initiated.** The agent signs a rotation request with the old key. The service emails a confirmation link to the owner. The rotation completes only after the owner clicks the link and authenticates with an owner session.
+**Owner-initiated (RECOMMENDED for compromise recovery).** The owner supplies a fresh public key through a side-channel — pasted into a dashboard form, or carried on an owner-authenticated request to the re-key endpoint. Because the request is NOT signed by the agent key (which may be stolen), the account being re-keyed is named explicitly and the service MUST verify that the owner-authenticated session owns it.
 
-**Owner-initiated.** The owner rotates from their dashboard. A fresh public key is supplied through a side-channel (e.g. the owner pastes a new DID into a form) or via a service-defined bootstrap protocol.
+```http
+POST /afauth/v1/accounts/me/keys/rekey HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+[ owner-authenticated session; NOT agent-signed ]
 
-In both cases, the service MUST require an owner-authenticated session step before the rotation takes effect.
+{
+  "current_account_did": "did:key:z6Mk<old>...",
+  "new_account_did":     "did:key:z6Mk<new>..."
+}
+```
+
+Response:
+
+```json
+{
+  "account_did":    "did:key:z6Mk<new>...",
+  "old_revoked_at": "2026-05-18T14:00:00Z",
+  "state":          "CLAIMED"
+}
+```
+
+The owner binding and any attestor-issued `sub_h` (§10.4) carry forward. For `did:key` the account identifier necessarily changes to the new DID (§8.1) — it is returned in the response — and the old DID is added to the revocation list (§8.3). The service MUST reject:
+
+- a stale session with `403` `owner_session_too_stale` (§7.5);
+- a session that does not own the named account with `403` `owner_authentication_required` (and `401` `owner_authentication_required` when no session is presented at all);
+- a non-`CLAIMED` or absent account with `409` `not_claimed` (or `404` `unknown_account`), and an `EXPIRED` account with `410` `account_expired`;
+- a `new_account_did` that is malformed or equal to the current DID with `400` `malformed_request`, and one that already names an existing account with `409` `already_claimed`.
+
+**Agent-initiated.** The agent signs a rotation request with the old key (the §8.1 endpoint); for a `CLAIMED` account the service MUST NOT complete it inline, but instead emails a confirmation link to the owner and completes only after the owner authenticates with a fresh owner session. An agent-signed request that attempts to complete a post-claim key change inline is rejected with `403` (`owner_binding_blocked` / `owner_authentication_required` per §11.3).
 
 ### 8.3 Revocation
 
@@ -661,7 +690,33 @@ Cross-service revocation distribution is NOT part of this specification. Service
 
 ### 8.4 Owner-initiated revocation
 
-The owner of a `CLAIMED` account MAY revoke the agent's key entirely without rotating. This effectively pauses the agent. Subsequent requests signed by the revoked key MUST return `401 Unauthorized`. The owner MAY later restore service by uploading a new agent key (per Section 8.2).
+The owner of a `CLAIMED` account MAY revoke the agent's key entirely, without rotating — the authoritative pause / kill-switch. Like re-key (§8.2) this is an owner-binding operation: owner-authenticated, NOT agent-signed.
+
+```http
+POST /afauth/v1/accounts/me/keys/revoke HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+[ owner-authenticated session; NOT agent-signed ]
+
+{
+  "account_did": "did:key:z6Mk<agent>..."
+}
+```
+
+The response is `200 OK` with `{ "account_did": "...", "revoked_at": "2026-05-18T14:00:00Z" }`. The DID is added to the revocation list (§8.3); subsequent requests signed by the revoked key MUST return `401 Unauthorized` with `revoked_key`. The service MUST apply the same owner-session gates as §8.2 (stale → `403` `owner_session_too_stale`; non-owner → `403` `owner_authentication_required`; no session → `401`; non-`CLAIMED` → `409` `not_claimed`). Re-revoking an already-revoked account is idempotent (`200`). The owner MAY later restore service by re-keying (§8.2); for `did:key`, "restore" installs a NEW key under a NEW identifier — it is not an un-revoke of the old key, which stays revoked.
+
+Services MAY additionally expose an un-gated, service-internal revoke for abuse handling, distinct from this owner-facing endpoint.
+
+### 8.5 Revocation coverage and its limits
+
+Revocation and disable have honest, bounded reach. Implementers and operators MUST understand the following:
+
+- **Per-service, non-distributed.** §8.3/§8.4 revocation is local to the service that performs it; there is no inter-service revocation transport (§8.3). An owner recovering from compromise must act at each service that supports owner revocation — and at the attestor (if any) to stop new attestations.
+- **Attested access is bounded by the attestation lifetime.** Where a service gates each request on a live attestation (§9.2 `attested_only`, §10.6 per-request), revoking the agent's binding at the attestor takes effect within the attestation TTL (≤ the §10.2 ceiling). Already-issued attestations remain valid until they expire: disabling or revoking stops NEW issuance, it does not recall outstanding tokens.
+- **Signature-gated, non-attested access is a structural blind spot for attestor-side action.** A service that checked an attestation once at signup and thereafter trusts the agent signature will not observe an attestor-side revoke at all; only that service's own §8.4 revocation reaches it. Services protecting high-value operations SHOULD therefore gate on live per-request attestation (§10.6) rather than minting a long-lived local credential at first contact.
+- **The agent's local state is untrusted after compromise.** Recovery MUST NOT depend on the agent cleaning up its own ledger or cache; an attacker who holds the key controls that state.
+
+This is a property of the trust model, not a v0.1 defect; see §12.1.
 
 ---
 
@@ -841,7 +896,7 @@ Field semantics:
 | `401 Unauthorized` | Signature verification failed, key revoked, or attestation invalid |
 | `403 Forbidden` | Operation not permitted in the current state (e.g., agent-initiated ownership change post-claim) |
 | `404 Not Found` | Account does not exist (only when implicit signup is disabled) |
-| `409 Conflict` | State conflict (e.g., account already CLAIMED, key already revoked) |
+| `409 Conflict` | State conflict (e.g., account already `CLAIMED`; a re-key/revoke target that is not `CLAIMED`; a re-key `new_account_did` that already names an account) |
 | `410 Gone` | Account is EXPIRED or invitation has expired |
 | `429 Too Many Requests` | Rate limit exceeded |
 | `503 Service Unavailable` | Service temporarily unable to process AFAuth requests |
@@ -852,7 +907,7 @@ Conforming services MUST use these codes when the corresponding condition applie
 
 `invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `owner_binding_blocked`, `owner_session_too_stale`, `account_expired`, `rate_limit_exceeded`, `malformed_request`, `unsupported_recipient_type`.
 
-`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general. `owner_session_too_stale` is also returned with `403 Forbidden`, when an owner-authenticated session is present but the most recent authentication event it evidences predates the service's §7.5 freshness window; it is distinct from `owner_authentication_required` (no session at all) and `owner_binding_blocked` (an agent-signed request to an owner-binding op). `unsupported_recipient_type` is returned with `400 Bad Request` when an invitation request specifies a recipient `type` not present in the service's declared `recipient_types` (§4.4, §7.2).
+`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general. `owner_session_too_stale` is also returned with `403 Forbidden`, when an owner-authenticated session is present but the most recent authentication event it evidences predates the service's §7.5 freshness window; it is distinct from `owner_authentication_required` (no session at all) and `owner_binding_blocked` (an agent-signed request to an owner-binding op). `unsupported_recipient_type` is returned with `400 Bad Request` when an invitation request specifies a recipient `type` not present in the service's declared `recipient_types` (§4.4, §7.2). `owner_authentication_required` is returned with `401 Unauthorized` when no owner-authenticated session is presented for an owner-binding operation (§8.2, §8.4), and with `403 Forbidden` when a session is present but does not own the target account. `not_claimed` is returned with `409 Conflict` when an owner re-key (§8.2) or revoke (§8.4) targets an account that is not `CLAIMED`; `already_claimed` is returned with `409 Conflict` both for a claim attempt on an already-claimed account and for a re-key whose `new_account_did` already names an existing account.
 
 Services MAY define additional error codes for service-specific conditions, but SHOULD prefix them with a service-specific namespace (e.g., `example_quota_exceeded`).
 
