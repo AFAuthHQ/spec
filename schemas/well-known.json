@@ -24,7 +24,9 @@
         "owner_invitation": { "type": "string" },
         "claim_page":       { "type": "string", "format": "uri" },
         "claim_completion": { "type": "string" },
-        "key_rotation":     { "type": "string" }
+        "key_rotation":     { "type": "string" },
+        "key_rekey":        { "type": "string" },
+        "key_revocation":   { "type": "string" }
       }
     },
     "signature_algorithms": {
