@@ -1,0 +1,28 @@
+{
+  "name": "well-formed-with-attested-session",
+  "description": "Advertises the `attested_session` feature (§4.4, §10.7) alongside `attested_only` billing.",
+  "section": "C.3",
+  "document": {
+    "afauth_version": "0.1",
+    "service_did": "did:web:api.example.com",
+    "endpoints": {
+      "accounts": "/afauth/v1/accounts",
+      "owner_invitation": "/afauth/v1/accounts/me/owner-invitation",
+      "claim_page": "https://claim.example.com",
+      "claim_completion": "/afauth/v1/claim"
+    },
+    "signature_algorithms": [
+      "ed25519"
+    ],
+    "features": [
+      "attestation",
+      "attested_session"
+    ],
+    "billing": {
+      "unclaimed_mode": "attested_only"
+    }
+  },
+  "expected": {
+    "type": "accept"
+  }
+}

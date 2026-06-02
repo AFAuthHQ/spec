@@ -39,7 +39,7 @@
       "description": "Optional features the service supports. Two-step invite is mandatory in v0.1 and is not advertised here.",
       "items": {
         "type": "string",
-        "enum": ["attestation", "key_rotation"]
+        "enum": ["attestation", "key_rotation", "attested_session"]
       }
     },
     "recipient_types": {
