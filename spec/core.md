@@ -656,7 +656,7 @@ Response:
 }
 ```
 
-The owner binding and any attestor-issued `sub_h` (§10.4) carry forward. For `did:key` the account identifier necessarily changes to the new DID (§8.1) — it is returned in the response — and the old DID is added to the revocation list (§8.3). The service MUST reject:
+The owner binding carries forward service-side. Attestor-issued `sub_h` (§10.4) does NOT automatically carry forward: a `did:key` re-key yields a new agent DID, and the attestor keys bindings on the agent DID, so the new key has no binding — and thus obtains no attestation and no `sub_h` — until the owner re-links it to the same principal (§10.5.1; see §8.5). The same `sub_h` is then restored, because `sub_h` is keyed on the principal, not on the key. For `did:key` the account identifier necessarily changes to the new DID (§8.1) — it is returned in the response — and the old DID is added to the revocation list (§8.3). The service MUST reject:
 
 - a stale session with `403` `owner_session_too_stale` (§7.5);
 - a session that does not own the named account with `403` `owner_authentication_required` (and `401` `owner_authentication_required` when no session is presented at all);
@@ -698,6 +698,7 @@ Revocation and disable have honest, bounded reach. Implementers and operators MU
 - **Attested access is bounded by the attestation lifetime.** Where a service gates each request on a live attestation (§9.2 `attested_only`, §10.6 per-request), revoking the agent's binding at the attestor takes effect within the attestation TTL (≤ the §10.2 ceiling). Already-issued attestations remain valid until they expire: disabling or revoking stops NEW issuance, it does not recall outstanding tokens.
 - **Signature-gated, non-attested access is a structural blind spot for attestor-side action.** A service that checked an attestation once at signup and thereafter trusts the agent signature will not observe an attestor-side revoke at all; only that service's own §8.4 revocation reaches it. Services protecting high-value operations SHOULD therefore gate on live per-request attestation (§10.6) rather than minting a long-lived local credential at first contact.
 - **The agent's local state is untrusted after compromise.** Recovery MUST NOT depend on the agent cleaning up its own ledger or cache; an attacker who holds the key controls that state.
+- **Resuming attested access requires a re-link, not just a re-key.** A §8.2 re-key produces a new agent DID with no attestor binding (the attestor keys bindings on the agent DID). To regain access at `attested_only` services the owner MUST re-link the new DID to the same principal at the attestor (§10.5.1) — and re-enable the principal first if it was disabled (§8.4). Because `sub_h` is keyed on the principal (§10.4), per-service operator continuity is preserved across the re-link. Revocation and disable cover only the "stop" direction; resuming is this distinct, owner-driven re-link step.
 
 This is a property of the trust model, not a v0.1 defect; see §12.1.
 
