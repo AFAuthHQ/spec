@@ -28,6 +28,7 @@ A conforming service MUST:
 8. **Error codes (§11).** Use the reserved codes for the conditions they describe.
 9. **Recipient types (§7.7).** Accept at minimum the `email` recipient type. Declare any additional supported types in `recipient_types` of the discovery doc. Reject unsupported types in invitation requests with `400 Bad Request` and `unsupported_recipient_type`.
 10. **Owner re-key & revoke (§8.2, §8.4).** A service that advertises `key_rekey` / `key_revocation` MUST gate them on a fresh owner-authenticated session (§7.5) — never the agent signature — and MUST verify the session owns the target account: reject a stale session with `owner_session_too_stale`, a non-owner with `owner_authentication_required` (and no session with `401`), and a non-`CLAIMED` target with `not_claimed`. After revoke — and, for the old DID, after re-key — a request signed by the retired key MUST fail with `401 revoked_key`.
+11. **Attested sessions (§10.7).** A service that advertises `attested_session` MUST treat a presented attestation as valid only until its `exp` (strict mode) — or, in extended mode, until a service-chosen window `T` refreshed on each presentation — and MUST challenge a request from an established account whose freshness window has lapsed with `401 attestation_required` rather than serving it on the agent signature alone. It MUST reject an already-expired attestation presented as a refresh (§10.2).
 
 ## Agent conformance (planned probes)
 
@@ -38,6 +39,7 @@ A conforming agent MUST:
 3. **Signing.** Produce signatures with all §5.2 covered components and parameters; bound `expires - created` ≤ 300 seconds; use a fresh nonce per request.
 4. **Key handling.** Store private keys per §3.2 / §12.1 recommendations; rotate per §8.
 5. **Claim flow.** Initiate the two-step invitation per §7.2; treat `410 Gone` on an invitation as a normal expiry condition.
+6. **Attestation refresh (§10.7).** On `401 attestation_required` from a service with which it has an established account, an agent SHOULD obtain a fresh attestation (§10) and retry the request. It MUST NOT treat a transient mint failure as terminal, and MUST stop and surface a revoked or disabled binding (a refused mint) to the operator rather than retrying indefinitely.
 
 ## Versioning
 
