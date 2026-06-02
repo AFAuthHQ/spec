@@ -122,7 +122,7 @@ All cryptographic operations MUST use constant-time implementations to avoid sid
 
 ### 3.1 Account identifiers
 
-An AFAuth account is identified by a Decentralized Identifier ([W3C-DID-CORE]). Conforming services MUST accept account identifiers using the `did:key` method ([W3C-DID-KEY]), and SHOULD accept the `did:web` method ([W3C-DID-WEB]) for accounts intended to persist across key rotation.
+An AFAuth account is identified by a Decentralized Identifier ([W3C-DID-CORE]) using the `did:key` method ([W3C-DID-KEY]). Conforming services MUST accept `did:key` account identifiers. AFAuth defines no other agent account method in v0.1: agents typically run on user machines behind home routers, with no stable web origin at which to host a DID document, so a DNS-anchored method is not a usable agent identity. (`did:web` still appears in this specification for a *service's* own identity (§4.3) and for owner recipients (§7.7.4) — neither is the agent's account key.)
 
 #### 3.1.1 did:key
 
@@ -146,21 +146,9 @@ Implementations MUST validate the canonical form of a `did:key` identifier:
 - Implementations MUST reject any multibase string that does not round-trip to its canonical encoding. Base58btc has no built-in length check and admits non-canonical encodings (e.g., leading-zero padding); accepting non-canonical forms permits two distinct strings to resolve to the same public key, which breaks equality-based account lookup.
 - Implementations MUST reject any payload whose length after the codec prefix is not exactly 32 bytes for Ed25519.
 
-`did:key` has no rotation or revocation mechanism within the DID method itself: rotating the verification key necessarily changes the account identifier (see §8.1). Implementations operating long-lived accounts SHOULD use `did:web` instead.
+`did:key` has no rotation or revocation mechanism within the DID method itself: rotating the verification key necessarily changes the account identifier (see §8.1). Recovery from a lost or compromised key is therefore owner-driven (revoke + re-key, §8.2/§8.4), not a property of a stable identifier.
 
-#### 3.1.2 did:web
-
-A `did:web` identifier encodes a DNS-anchored authority:
-
-```
-did:web:<host>[:path]
-```
-
-The DID document is fetched from `https://<host>/.well-known/did.json` (or the path-derived URL) per [W3C-DID-WEB]. Conforming services that accept `did:web` MUST cache the DID document with a reasonable TTL (RECOMMENDED ≤ 1 hour) and re-fetch on signature verification failure.
-
-`did:web` supports key rotation without changing the account identifier: the controller publishes a new public key in the DID document and the identifier persists. Services MUST verify signatures against the verification method currently published in the DID document.
-
-#### 3.1.3 Future methods
+#### 3.1.2 Future methods
 
 Future versions of this specification may add support for additional DID methods (e.g., `did:plc`) that provide stable account identity with rotatable verification keys without depending on DNS. See Appendix D for design rationale.
 
@@ -310,7 +298,7 @@ On receiving a signed request, the verifier MUST:
 
 1. Parse the `Signature-Input` header and verify that all required covered components and signature parameters (Section 5.2) are present.
 2. Construct the canonical signature input string per RFC 9421.
-3. Resolve the account's public key from the `keyid` value — by decoding the multibase-multicodec representation for `did:key` (per §3.1.1), or by fetching the DID document for `did:web` (per §3.1.2).
+3. Resolve the account's public key from the `keyid` value by decoding the multibase-multicodec representation for `did:key` (per §3.1.1). No network fetch or registry lookup is required.
 4. Verify the signature using the algorithm declared in `alg`.
 5. Verify that the current time is between `created` and `expires` inclusive, with a tolerance for clock skew (RECOMMENDED: ±60 seconds).
 6. Verify that the `nonce` has not been seen before for this `keyid` within the storage window (see §5.6).
@@ -636,14 +624,9 @@ Response:
 }
 ```
 
-Behaviour by DID method:
+Because a `did:key` identifier encodes the public key, the account identifier necessarily changes on rotation: from the service's perspective the old DID is decommissioned (added to the revocation list per §8.3) and the new DID becomes the account's identifier. External references held to the old DID no longer resolve to this account; a caller holding the old DID updates its reference from the rotation response.
 
-- **`did:key`:** the account identifier necessarily changes, because the identifier encodes the public key. From the service's perspective, the old DID is decommissioned (added to the revocation list per §8.3) and the new DID becomes the account's identifier. External references held to the old DID will no longer resolve to this account.
-- **`did:web`:** the account identifier remains the same. The agent publishes the new verification key in the DID document at the established URL; the service re-fetches the DID document and verifies subsequent signatures against the new verification method. The service's revocation list (§8.3) records the verification-method change without changing the account identifier.
-
-Implementations operating long-lived accounts SHOULD use `did:web` for this reason; see §3.1.
-
-Key rotation changes (for `did:key`) or re-keys (for `did:web`) the agent's verification key, but it does NOT change any attestor-issued `sub_h` (§10.4). `sub_h` is keyed on the principal behind the agent, not on the verification key, so an agent that re-links a rotated key to the same principal (§10.5.1) continues to present the same `sub_h` to each service. A service that keys per-human policy on `sub_h` therefore retains operator continuity across the agent's key rotations.
+Key rotation changes the agent's verification key (and, for `did:key`, the account identifier), but it does NOT change any attestor-issued `sub_h` (§10.4). `sub_h` is keyed on the principal behind the agent, not on the verification key, so an agent that re-links a rotated key to the same principal (§10.5.1) continues to present the same `sub_h` to each service. A service that keys per-human policy on `sub_h` therefore retains operator continuity across the agent's key rotations.
 
 ### 8.2 Post-claim key rotation (re-key)
 
@@ -1378,9 +1361,9 @@ Declared, not decided. The protocol takes no position on who pays during the unc
 
 Not standardised in v0.1. Each service maintains its own revocation list locally. Aggregated abuse feeds are a layer above the protocol; they do not require wire-format changes to be deployed.
 
-### D.6 Service-bound accounts
+### D.6 Why agents are `did:key`-only (not `did:web`)
 
-Portable accounts only in v0.1. A `did:web` variant for service-bound accounts may be considered in future versions if billing or legal use cases warrant it. The `service_did` field in the discovery document is itself encouraged to use `did:web`, which is a useful precedent.
+Agent account identifiers are `did:key` (§3.1); `did:web` is deliberately NOT an agent account method. Agents typically run on user machines behind home routers, with no stable web origin at which to host a `did.json` document — so a DNS-anchored identity is not usable for the common agent. The consequence — that a `did:key` identifier changes when its key rotates — is handled by owner-driven revoke + re-key (§8.2 / §8.4), not by reaching for a stable-identifier DID method. (`did:web` remains appropriate for a *service's* own `service_did`, which does have a host, and for owner recipients (§7.7.4).)
 
 ### D.7 Two-step verify as a normative requirement
 
@@ -1416,7 +1399,7 @@ Services that may also receive requests directly (bypassing the edge verifier) M
 
 ### E.4 Optional service-side key-resolution endpoint
 
-For DID methods whose verification key is fully self-describing (`did:key` per §3.1.1), the verifier resolves keys without any I/O to the service. For methods that require an out-of-band fetch (`did:web` per §3.1.2), the verifier fetches the DID document directly and SHOULD cache the result.
+Agent account identifiers are `did:key` (§3.1.1), whose verification key is fully self-describing, so the verifier resolves keys without any I/O to the service — no network fetch, no registry.
 
 A service MAY additionally expose a private endpoint that returns its canonical view of an account's current verification key and status, for use by verifiers that need to consult the service's revocation list (§8.3) without independently mirroring it. A recommended shape:
 

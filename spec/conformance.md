@@ -34,7 +34,7 @@ A conforming service MUST:
 A conforming agent MUST:
 
 1. **Discovery.** Fetch and honour `/.well-known/afauth` before signup; respect the declared `signature_algorithms` and `billing.unclaimed_mode`.
-2. **Identity.** Generate a valid `did:key` (or use `did:web`) account identifier per §3.1, including canonical multibase/multicodec encoding.
+2. **Identity.** Generate a valid `did:key` account identifier per §3.1.1, including canonical multibase/multicodec encoding.
 3. **Signing.** Produce signatures with all §5.2 covered components and parameters; bound `expires - created` ≤ 300 seconds; use a fresh nonce per request.
 4. **Key handling.** Store private keys per §3.2 / §12.1 recommendations; rotate per §8.
 5. **Claim flow.** Initiate the two-step invitation per §7.2; treat `410 Gone` on an invitation as a normal expiry condition.

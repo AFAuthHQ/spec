@@ -322,7 +322,7 @@ sufficient for mirrors and aggregators that poll with
 
 Active conformance probing against listed services — running test
 vectors, publishing per-listing pass/fail results, the directory
-acting as a signing AFAuth agent (`did:web:afauth.org`), and the
+acting as a signing AFAuth agent (a `did:key` agent), and the
 attendant rate budget — is **out of scope for this version** and is
 tracked separately. The directory's only liveness signal in this
 version is the discovery-document revalidation defined in §7.
