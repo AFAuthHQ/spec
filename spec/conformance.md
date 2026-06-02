@@ -39,7 +39,7 @@ A conforming agent MUST:
 3. **Signing.** Produce signatures with all §5.2 covered components and parameters; bound `expires - created` ≤ 300 seconds; use a fresh nonce per request.
 4. **Key handling.** Store private keys per §3.2 / §12.1 recommendations; rotate per §8.
 5. **Claim flow.** Initiate the two-step invitation per §7.2; treat `410 Gone` on an invitation as a normal expiry condition.
-6. **Attestation refresh (§10.7).** On `401 attestation_required` from a service with which it has an established account, an agent SHOULD obtain a fresh attestation (§10) and retry the request. It MUST NOT treat a transient mint failure as terminal, and MUST stop and surface a revoked or disabled binding (a refused mint) to the operator rather than retrying indefinitely.
+6. **Attestation refresh (§10.7).** On `401 attestation_required` from a service with which it has an established account, an agent SHOULD obtain a fresh attestation (§10) and retry the request. It MUST NOT treat a transient mint failure as terminal, and MUST stop and surface a revoked or paused binding (a refused mint) to the operator rather than retrying indefinitely.
 
 ## Versioning
 
