@@ -364,7 +364,7 @@ async function scenarioPreClaimKeyRotate(opts) {
  *   - the harness (acting as the browser human) auto-confirms via
  *     the gated /v1/link/confirm-e2e endpoint
  *   - CLI's polling picks up the confirmed state and pops the
- *     binding token from Redis
+ *     binding info (id + expiry; no bearer token) from Redis
  *   - the CLI persists trust state to ~/.afauth/trust.json
  *
  * Catches: drift between the agent-side signing of /v1/link/poll
@@ -440,9 +440,13 @@ async function scenarioTrustLink(opts) {
     /^[0-9a-f-]{36}$/.test(trustState.binding_id),
     `unexpected binding_id: ${trustState.binding_id}`,
   );
+  // §3.1 keyless mint: there is no bearer token in trust.json — the agent
+  // authenticates each /v1/token mint by signing with its account key. The
+  // persisted binding carries only the id and its expiry.
   assert(
-    typeof trustState.binding_token === 'string' && trustState.binding_token.length > 0,
-    'binding_token missing',
+    Number.isInteger(trustState.binding_token_expires_at) &&
+      trustState.binding_token_expires_at > 0,
+    'binding_token_expires_at missing',
   );
 }
 
