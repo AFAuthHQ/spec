@@ -12,8 +12,8 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "@afauthhq/server": "^0.2.0",
-    "@afauthhq/core": "^0.1.0",
+    "@afauthhq/server": "file:./vendor/afauthhq-server.tgz",
+    "@afauthhq/core": "file:./vendor/afauthhq-core.tgz",
     "@hono/node-server": "^1.13.0",
     "hono": "^4.6.0",
     "jose": "^6.2.3"

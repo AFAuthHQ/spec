@@ -21,6 +21,11 @@ cd "$HERE/.."
 
 WAIT="${E2E_WAIT_SECONDS:-120}"
 
+# Vendor the CURRENT workspace SDK into the reference-server (versions.json:
+# typescript_sdk_sha=main) so the harness exercises source, not published npm.
+echo "[e2e] packing workspace SDK into reference-server/vendor..."
+"$HERE/pack-sdk.sh"
+
 echo "[e2e] compose build..."
 docker compose build
 

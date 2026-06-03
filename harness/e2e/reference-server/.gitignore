@@ -1,0 +1,5 @@
+# Workspace SDK tarballs, produced by ../scripts/pack-sdk.sh before the
+# Docker build. Build artifacts — never committed.
+vendor/
+node_modules/
+dist/
