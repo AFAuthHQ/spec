@@ -144,11 +144,11 @@ to steal from the agent's disk or to leak from a log — consistent with
 the protocol's stance that an agent is authenticated by an RFC 9421
 signature per request rather than a bearer token. The agent–DID
 uniqueness rule (§10.5) makes the verified `keyid` an unambiguous binding
-key. An attestor MAY accept a long-lived bearer binding token as a
-transitional alternative, but SHOULD require the signature and SHOULD
-NOT treat a bearer token as sufficient once signed minting is available;
-a bearer mint credential reintroduces exactly the standing-secret
-exposure that signing removes.
+key, so the binding needs no separate token to look up. An attestor MUST
+NOT issue a long-lived bearer mint credential in place of the signature:
+doing so reintroduces exactly the standing-secret exposure that signing
+removes. The `afauth-trust` attestor accordingly issues no binding token —
+the link ceremony returns only a binding id and its expiry.
 
 **No PII in claims.** The trust attestor emits a categorical
 `verification` value, never the underlying address, number, or payment
