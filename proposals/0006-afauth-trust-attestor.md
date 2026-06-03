@@ -132,6 +132,24 @@ latency.
 destination `service_did` prevents an agent from replaying an
 attestation issued for service A against service B.
 
+**Keyless mint: the account key is the sole credential.** The trust
+attestor authenticates a mint request by requiring the agent to sign it
+with its account key, using the §5 (RFC 9421) scheme — the same
+machinery the agent uses for service requests, covering `@method`,
+`@target-uri`, and `content-digest`, with `keyid` set to the agent DID.
+The attestor verifies the signature offline (the `keyid` is a `did:key`)
+and maps the verified DID to its binding. This is proof-of-possession of
+the account key on every mint, so there is no standing bearer credential
+to steal from the agent's disk or to leak from a log — consistent with
+the protocol's stance that an agent is authenticated by an RFC 9421
+signature per request rather than a bearer token. The agent–DID
+uniqueness rule (§10.5) makes the verified `keyid` an unambiguous binding
+key, so the binding needs no separate token to look up. An attestor MUST
+NOT issue a long-lived bearer mint credential in place of the signature:
+doing so reintroduces exactly the standing-secret exposure that signing
+removes. The `afauth-trust` attestor accordingly issues no binding token —
+the link ceremony returns only a binding id and its expiry.
+
 **No PII in claims.** The trust attestor emits a categorical
 `verification` value, never the underlying address, number, or payment
 metadata. Consuming services receive a signal, not an identity.
