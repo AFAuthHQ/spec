@@ -23,7 +23,7 @@ unless the metadata table inside the generator is edited.
 
 ## Coverage
 
-All 19 codes reserved by §11.3:
+All 18 codes reserved by §11.3:
 
 | Code | HTTP | Section |
 |---|---|---|
@@ -45,7 +45,6 @@ All 19 codes reserved by §11.3:
 | `malformed_request` | 400 | (general) |
 | `unsupported_recipient_type` | 400 | §4.4, §7.2 |
 | `owner_session_too_stale` | 403 | §7.5 |
-| `principal_already_registered` | 409 | §10.4.4 |
 
 Not every code is reachable in every v0.1 SDK build (e.g.,
 attestation codes require optional §10 attestation support). The

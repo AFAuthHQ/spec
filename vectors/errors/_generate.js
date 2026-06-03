@@ -72,9 +72,6 @@ const VECTORS = [
   { code: 'owner_session_too_stale',     status: 403, section: '§7.5, §11.3',
     description: 'An owner-authenticated session is present but the most recent authentication event predates the service\'s §7.5 freshness window. Distinct from `owner_authentication_required` (no session) and `owner_binding_blocked` (agent-signed).',
     message: 'Owner session is too stale; please re-authenticate' },
-  { code: 'principal_already_registered', status: 409, section: '§10.4.4, §11.3',
-    description: 'A service that enforces per-principal uniqueness (§10.4.4) received an attested signup whose `(iss, sub_h)` already holds an account. The service MUST NOT create the second account, and the rejection MUST NOT disclose the DID of the existing one.',
-    message: 'An account already exists for this principal' },
 ];
 
 const OUT_DIR = __dirname;

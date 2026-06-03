@@ -318,6 +318,14 @@ Services MAY accept signed requests outside the freshness window for non-mutatin
 
 ## 6. Account Lifecycle
 
+### 6.0 Account identity and agent credentials
+
+A service identifies an account by an opaque, service-local `account_id` that is distinct from any verification key. An account holds **one or more agent credentials** — each a `did:key` (§3) authenticated per §5 via its `keyid`. A request resolves to its account through the presenting credential's `keyid`.
+
+In the simplest case an account has exactly one credential, and `account_id` may be carried 1:1 with that DID. A service that groups a human's agents by the attestor pseudonym `(iss, sub_h)` (§10.4.4) attaches additional credentials (the human's other devices) to the same `account_id` — "one account, many devices". The `account_id` is **stable across key rotation** (§8.1): rotating a credential swaps that DID, not the account. Singleton accounts (no `sub_h`) still hold a single credential.
+
+Responses that name the account use `account_id`; responses to an agent-signed request also echo the calling credential as `agent_did`.
+
 ### 6.1 Account states
 
 An account is in exactly one state at any time. Conforming services MUST implement the following states:
@@ -365,7 +373,8 @@ HTTP/1.1 201 Created
 Content-Type: application/json
 
 {
-  "account_did":          "did:key:z6Mk...",
+  "account_id":           "acct_8f3cZ_K9qWmA...",
+  "agent_did":            "did:key:z6Mk...",
   "state":                "UNCLAIMED",
   "created_at":           "2026-05-18T12:00:00Z",
   "unclaimed_expires_at": "2026-06-17T12:00:00Z"
@@ -388,7 +397,8 @@ Response:
 
 ```json
 {
-  "account_did":          "did:key:z6Mk...",
+  "account_id":           "acct_8f3cZ_K9qWmA...",
+  "agent_did":            "did:key:z6Mk...",
   "state":                "UNCLAIMED",
   "created_at":           "2026-05-18T12:00:00Z",
   "unclaimed_expires_at": "2026-06-17T12:00:00Z",
@@ -497,7 +507,7 @@ Response on success:
 
 ```json
 {
-  "account_did": "did:key:z6Mk...",
+  "account_id": "acct_8f3cZ_K9qWmA...",
   "state":       "CLAIMED",
   "owner": {
     "identity": {
@@ -619,12 +629,13 @@ Response:
 
 ```json
 {
-  "account_did":    "did:key:z6Mk<new>...",
+  "account_id":     "acct_8f3cZ_K9qWmA...",
+  "agent_did":      "did:key:z6Mk<new>...",
   "old_revoked_at": "2026-05-18T14:00:00Z"
 }
 ```
 
-Because a `did:key` identifier encodes the public key, the account identifier necessarily changes on rotation: from the service's perspective the old DID is decommissioned (added to the revocation list per §8.3) and the new DID becomes the account's identifier. External references held to the old DID no longer resolve to this account; a caller holding the old DID updates its reference from the rotation response.
+Because a `did:key` identifier encodes the public key, the agent **credential** DID necessarily changes on rotation: the old DID is decommissioned (added to the revocation list per §8.3) and the new DID becomes the live credential. The account itself is unchanged — its `account_id` (§6.0) is stable across rotation, and any sibling credentials on the same account keep working. A caller holding the old DID updates its reference from the rotation response.
 
 Key rotation changes the agent's verification key (and, for `did:key`, the account identifier), but it does NOT change any attestor-issued `sub_h` (§10.4). `sub_h` is keyed on the principal behind the agent, not on the verification key, so an agent that re-links a rotated key to the same principal (§10.5.1) continues to present the same `sub_h` to each service. A service that keys per-human policy on `sub_h` therefore retains operator continuity across the agent's key rotations.
 
@@ -650,13 +661,14 @@ Response:
 
 ```json
 {
-  "account_did":    "did:key:z6Mk<new>...",
+  "account_id":     "acct_8f3cZ_K9qWmA...",
+  "agent_did":      "did:key:z6Mk<new>...",
   "old_revoked_at": "2026-05-18T14:00:00Z",
   "state":          "CLAIMED"
 }
 ```
 
-The owner binding carries forward service-side. Attestor-issued `sub_h` (§10.4) does NOT automatically carry forward: a `did:key` re-key yields a new agent DID, and the attestor keys bindings on the agent DID, so the new key has no binding — and thus obtains no attestation and no `sub_h` — until the owner re-links it to the same principal (§10.5.1; see §8.5). The same `sub_h` is then restored, because `sub_h` is keyed on the principal, not on the key. For `did:key` the account identifier necessarily changes to the new DID (§8.1) — it is returned in the response — and the old DID is added to the revocation list (§8.3). The service MUST reject:
+The owner binding carries forward service-side. Attestor-issued `sub_h` (§10.4) does NOT automatically carry forward: a `did:key` re-key yields a new agent DID, and the attestor keys bindings on the agent DID, so the new key has no binding — and thus obtains no attestation and no `sub_h` — until the owner re-links it to the same principal (§10.5.1; see §8.5). The same `sub_h` is then restored, because `sub_h` is keyed on the principal, not on the key. The credential DID changes to the new value (§8.1) — it is returned as `agent_did` — while the `account_id` is stable; the old DID is added to the revocation list (§8.3). The service MUST reject:
 
 - a stale session with `403` `owner_session_too_stale` (§7.5);
 - a session that does not own the named account with `403` `owner_authentication_required` (and `401` `owner_authentication_required` when no session is presented at all);
@@ -667,7 +679,7 @@ The owner binding carries forward service-side. Attestor-issued `sub_h` (§10.4)
 
 ### 8.3 Revocation
 
-Each service MUST maintain a local revocation list of account DIDs whose keys have been retired (through rotation or owner-initiated revocation). Requests signed by a revoked key MUST be rejected with `401 Unauthorized` and the error code `revoked_key` (Section 11).
+Each service MUST maintain a local revocation list of agent credential DIDs whose keys have been retired (through rotation or owner-initiated revocation). Requests signed by a revoked key MUST be rejected with `401 Unauthorized` and the error code `revoked_key` (Section 11). Revoking a whole account (§8.4) lists every one of its agent credential DIDs.
 
 Cross-service revocation distribution is NOT part of this specification. Services MAY publish their revocation lists as part of an aggregated abuse feed (e.g., through a centralised network operator), but no inter-service revocation transport is mandated.
 
@@ -682,11 +694,11 @@ Content-Type: application/json
 [ owner-authenticated session; NOT agent-signed ]
 
 {
-  "account_did": "did:key:z6Mk<agent>..."
+  "account_id": "acct_8f3cZ_K9qWmA..."
 }
 ```
 
-The response is `200 OK` with `{ "account_did": "...", "revoked_at": "2026-05-18T14:00:00Z" }`. The DID is added to the revocation list (§8.3); subsequent requests signed by the revoked key MUST return `401 Unauthorized` with `revoked_key`. The service MUST apply the same owner-session gates as §8.2 (stale → `403` `owner_session_too_stale`; non-owner → `403` `owner_authentication_required`; no session → `401`; non-`CLAIMED` → `409` `not_claimed`). Re-revoking an already-revoked account is idempotent (`200`). The owner MAY later restore service by re-keying (§8.2); for `did:key`, "restore" installs a NEW key under a NEW identifier — it is not an un-revoke of the old key, which stays revoked.
+The account MAY instead be named by any of its agent credentials via `agent_did`. The response is `200 OK` with `{ "account_id": "...", "revoked_at": "2026-05-18T14:00:00Z" }`. Revoking the account adds every one of its agent credential DIDs to the revocation list (§8.3). The DID is added to the revocation list (§8.3); subsequent requests signed by the revoked key MUST return `401 Unauthorized` with `revoked_key`. The service MUST apply the same owner-session gates as §8.2 (stale → `403` `owner_session_too_stale`; non-owner → `403` `owner_authentication_required`; no session → `401`; non-`CLAIMED` → `409` `not_claimed`). Re-revoking an already-revoked account is idempotent (`200`). The owner MAY later restore service by re-keying (§8.2); for `did:key`, "restore" installs a NEW key under a NEW identifier — it is not an un-revoke of the old key, which stays revoked.
 
 Services MAY additionally expose an un-gated, service-internal revoke for abuse handling, distinct from this owner-facing endpoint.
 
@@ -812,7 +824,7 @@ Services MAY use `sub_h` as a per-service uniqueness key for the human behind an
 
 Services that accept attestations from more than one attestor MUST scope `sub_h` by `(iss, sub_h)` rather than by `sub_h` alone, since different attestors derive independent pseudonym spaces for the same human.
 
-A service that enforces "at most one account per principal" reserves a uniqueness slot keyed on `(iss, sub_h)` at signup. When an attested signup presents a `(iss, sub_h)` that already holds an account, the service SHOULD reject it with `409 Conflict` and error code `principal_already_registered` (§11.3), and MUST NOT create the second account — the rejection MUST occur before any state transition, mirroring §6.3. Because `sub_h` is keyed on the principal and not the verification key (§10.4.2, §10.5.1), the slot is unaffected by key rotation (§8.1) and by revoke-then-rebind to the same principal: the operator keeps its single slot across both. The slot is released when the held account is terminally removed (the §6.1 `EXPIRED` transition). The rejection MUST NOT reveal the DID of the account already holding the slot, preserving §10.3.1's prohibition on cross-principal correlation. Runtime-only attestations carry no `sub_h` (§10.4.1) and so cannot be deduplicated this way; a service that requires per-principal uniqueness SHOULD therefore require an attestation that asserts a principal (i.e., carries `verification`). This is a local-policy convenience and does not relax the attestor-side anti-Sybil caveats of §10.4.5 and §12.9.
+A service MAY group a human's agents into a **single account** keyed on `(iss, sub_h)`: when an attested signup presents an `(iss, sub_h)` that already has an account, the new agent DID is **attached to that account** rather than creating a second one — "one account, many devices", the way a human signs into one account from several devices. The account is then identified by a service-local `account_id` (§6) distinct from any verification key, and holds one or more agent credentials. Because `sub_h` is keyed on the principal and not the verification key (§10.4.2, §10.5.1), this grouping is unaffected by key rotation (§8.1) and by revoke-then-rebind to the same principal. A service that groups this way SHOULD bucket its anti-abuse state (free-tier quota, rate limits, bans) on the account (equivalently on `(iss, sub_h)`), so that a human's agents share one bucket and no legitimate multi-device user is locked out. Runtime-only attestations carry no `sub_h` (§10.4.1) and assert no principal, so each such agent gets its own singleton account. This grouping is a local-policy convenience and does not relax the attestor-side anti-Sybil caveats of §10.4.5 and §12.9.
 
 #### 10.4.5 What `sub_h` is not
 
@@ -899,7 +911,7 @@ Field semantics:
 | `401 Unauthorized` | Signature verification failed, key revoked, or attestation invalid |
 | `403 Forbidden` | Operation not permitted in the current state (e.g., agent-initiated ownership change post-claim) |
 | `404 Not Found` | Account does not exist (only when implicit signup is disabled) |
-| `409 Conflict` | State conflict (e.g., account already `CLAIMED`; a re-key/revoke target that is not `CLAIMED`; a re-key `new_account_did` that already names an account; a second account for a principal that already has one under §10.4.4) |
+| `409 Conflict` | State conflict (e.g., account already `CLAIMED`; a re-key/revoke target that is not `CLAIMED`; a re-key `new_account_did` that already names an account) |
 | `410 Gone` | Account is EXPIRED or invitation has expired |
 | `429 Too Many Requests` | Rate limit exceeded |
 | `503 Service Unavailable` | Service temporarily unable to process AFAuth requests |
@@ -908,9 +920,9 @@ Field semantics:
 
 Conforming services MUST use these codes when the corresponding condition applies:
 
-`invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `owner_binding_blocked`, `owner_session_too_stale`, `account_expired`, `rate_limit_exceeded`, `malformed_request`, `unsupported_recipient_type`, `principal_already_registered`.
+`invalid_signature`, `expired_signature`, `replayed_nonce`, `unknown_account`, `revoked_key`, `invalid_attestation`, `attestation_required`, `invitation_expired`, `invitation_not_found`, `already_claimed`, `not_claimed`, `owner_authentication_required`, `owner_binding_blocked`, `owner_session_too_stale`, `account_expired`, `rate_limit_exceeded`, `malformed_request`, `unsupported_recipient_type`.
 
-`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general. `owner_session_too_stale` is also returned with `403 Forbidden`, when an owner-authenticated session is present but the most recent authentication event it evidences predates the service's §7.5 freshness window; it is distinct from `owner_authentication_required` (no session at all) and `owner_binding_blocked` (an agent-signed request to an owner-binding op). `unsupported_recipient_type` is returned with `400 Bad Request` when an invitation request specifies a recipient `type` not present in the service's declared `recipient_types` (§4.4, §7.2). `owner_authentication_required` is returned with `401 Unauthorized` when no owner-authenticated session is presented for an owner-binding operation (§8.2, §8.4), and with `403 Forbidden` when a session is present but does not own the target account. `not_claimed` is returned with `409 Conflict` when an owner re-key (§8.2) or revoke (§8.4) targets an account that is not `CLAIMED`; `already_claimed` is returned with `409 Conflict` both for a claim attempt on an already-claimed account and for a re-key whose `new_account_did` already names an existing account. `attestation_required` is returned with `401 Unauthorized` both when an `attested_only` service rejects a signup lacking a valid attestation (§9.2) and when an attested-session service challenges an established account whose freshness window has lapsed (§10.7). `principal_already_registered` is returned with `409 Conflict` when a service that enforces per-principal uniqueness (§10.4.4) receives an attested signup whose `(iss, sub_h)` already holds an account; the service MUST NOT create the second account, and the rejection MUST NOT disclose the DID of the account already holding the slot.
+`owner_binding_blocked` is returned with `403 Forbidden` when an agent-signed request attempts an owner-binding operation post-claim (§7.5); it is distinct from `owner_authentication_required`, which signals that an owner-authenticated session is required for the operation in general. `owner_session_too_stale` is also returned with `403 Forbidden`, when an owner-authenticated session is present but the most recent authentication event it evidences predates the service's §7.5 freshness window; it is distinct from `owner_authentication_required` (no session at all) and `owner_binding_blocked` (an agent-signed request to an owner-binding op). `unsupported_recipient_type` is returned with `400 Bad Request` when an invitation request specifies a recipient `type` not present in the service's declared `recipient_types` (§4.4, §7.2). `owner_authentication_required` is returned with `401 Unauthorized` when no owner-authenticated session is presented for an owner-binding operation (§8.2, §8.4), and with `403 Forbidden` when a session is present but does not own the target account. `not_claimed` is returned with `409 Conflict` when an owner re-key (§8.2) or revoke (§8.4) targets an account that is not `CLAIMED`; `already_claimed` is returned with `409 Conflict` both for a claim attempt on an already-claimed account and for a re-key whose `new_account_did` already names an existing account. `attestation_required` is returned with `401 Unauthorized` both when an `attested_only` service rejects a signup lacking a valid attestation (§9.2) and when an attested-session service challenges an established account whose freshness window has lapsed (§10.7).
 
 Services MAY define additional error codes for service-specific conditions, but SHOULD prefix them with a service-specific namespace (e.g., `example_quota_exceeded`).
 
@@ -1193,7 +1205,7 @@ Cookie: session=<alice-session>
 HTTP/1.1 200 OK
 
 {
-  "account_did": "did:key:z6MkpTHR...",
+  "account_id": "acct_8f3cZ_K9qWmA...",
   "state":       "CLAIMED",
   "owner": {
     "identity":   { "type": "email", "value": "alice@example.com" },
@@ -1235,7 +1247,7 @@ The service's claim page initiates an OIDC Authorization Code flow with Google; 
 
 ```json
 {
-  "account_did": "did:key:z6MkpTHR...",
+  "account_id": "acct_8f3cZ_K9qWmA...",
   "state":       "CLAIMED",
   "owner": {
     "identity": {
