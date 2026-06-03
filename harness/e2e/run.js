@@ -918,6 +918,95 @@ async function scenarioOwnerInvitationClaim(opts) {
   );
 }
 
+/**
+ * Scenario 11: one human, many devices → one account (§10.4.4).
+ *
+ * Two distinct agent keypairs — a "PC" and a "phone", each its own
+ * AFAUTH_HOME — both link to the SAME human at the trust attestor, so
+ * both present attestations carrying the same `sub_h`. When each signs up
+ * at the attested_only reference server, the SECOND device ATTACHES to the
+ * first's account instead of creating a new one: both introspections
+ * report the SAME `account_id` even though the two agent DIDs differ.
+ *
+ * Proves the multi-agent account model end-to-end across the whole
+ * pipeline — CLI key isolation, trust link + same-`sub_h` derivation,
+ * attested signup, and the SDK server's `(iss, sub_h)` device grouping.
+ * No mock fits in this picture.
+ */
+async function scenarioMultiAgentAccount(opts) {
+  // One human, reached from two devices. A fresh email keeps this human
+  // independent of the other trust-linking scenarios.
+  const email = 'e2e-multidevice@example.com';
+  const server = opts.serverBaseAttested;
+
+  // Drive one "device": fresh AFAUTH_HOME → init → link the shared human
+  // (browserless confirm) → attested signup → `accounts show --refresh`,
+  // returning the device's { agentDid, accountId } and its home dir.
+  async function device(label) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), `afauth-e2e-${label}-`));
+    const dopts = { ...opts, tmpDir: home };
+
+    let r = await runCli(dopts, ['init']);
+    assert(r.code === 0, `${label} init: ${r.stderr}`);
+
+    // Link THIS device's agent key to the shared human. confirm-e2e
+    // upserts the human by email, so both devices bind one human_id and
+    // therefore derive the same per-service `sub_h`.
+    let confirmed = false;
+    const link = await runCliStreaming(
+      dopts,
+      ['trust', 'link', '--base', opts.trustBase, '--no-loopback', '--no-browser', '--timeout', '30', '--poll', '1'],
+      async (line) => {
+        const m = line.match(/(https?:\/\/[^\s]+\/link\?req=([^\s&]+))/);
+        if (!m || confirmed) return;
+        confirmed = true;
+        const reqId = decodeJwtPayload(decodeURIComponent(m[2])).req_id;
+        const res = await fetch(opts.trustBase + '/v1/link/confirm-e2e', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ req_id: reqId, email }),
+        });
+        if (!res.ok) throw new Error(`${label} auto-confirm failed: ${res.status}`);
+      },
+    );
+    assert(link.code === 0, `${label} trust link exit ${link.code}: ${link.stderr}`);
+
+    // Attested signup. The attested_only server auto-mints from the cached
+    // binding, so the attestation (carrying `sub_h`) reaches the SDK.
+    r = await runCli(dopts, ['signup', server]);
+    assert(r.code === 0, `${label} signup exit ${r.code}: ${r.stderr}`);
+
+    // `accounts show --refresh` does a live GET /accounts/me and prints the
+    // ledger entry (incl. account_id + agent_did) as JSON.
+    r = await runCli(dopts, ['accounts', 'show', server, '--refresh']);
+    assert(r.code === 0, `${label} accounts show exit ${r.code}: ${r.stderr}`);
+    const entry = JSON.parse(r.stdout);
+    assert(/^did:key:z/.test(entry.agent_did), `${label} missing agent_did: ${r.stdout}`);
+    assert(/^acct_/.test(entry.account_id), `${label} missing account_id: ${r.stdout}`);
+    return { agentDid: entry.agent_did, accountId: entry.account_id, home };
+  }
+
+  const pc = await device('pc');
+  const phone = await device('phone');
+
+  try {
+    // Two genuinely distinct credentials (different keypairs / DIDs)...
+    assert(
+      pc.agentDid !== phone.agentDid,
+      `expected distinct agent DIDs, both ${pc.agentDid}`,
+    );
+    // ...resolve to ONE account — the phone attached to the PC's account.
+    assert(
+      pc.accountId === phone.accountId,
+      `one human must map to one account: pc=${pc.accountId} phone=${phone.accountId}`,
+    );
+  } finally {
+    for (const d of [pc, phone]) {
+      try { fs.rmSync(d.home, { recursive: true, force: true }); } catch { /* noop */ }
+    }
+  }
+}
+
 const SCENARIOS = {
   'init-signup': scenarioInitSignup,
   'pre-claim-key-rotate': scenarioPreClaimKeyRotate,
@@ -929,6 +1018,7 @@ const SCENARIOS = {
   'trust-attestation': scenarioTrustAttestation,
   'attested-only-reject': scenarioAttestedOnlyReject,
   'owner-invitation-claim': scenarioOwnerInvitationClaim,
+  'multi-agent-account': scenarioMultiAgentAccount,
 };
 
 // ---------- runner ----------

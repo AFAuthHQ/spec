@@ -13,7 +13,7 @@ For protocol-primitive conformance (vectors only), see the sibling
 
 ## Status
 
-Ten scenarios, all passing locally:
+Eleven scenarios, all passing locally:
 
 | Scenario | What it exercises |
 |---|---|
@@ -27,6 +27,7 @@ Ten scenarios, all passing locally:
 | `trust-attestation` | §10 + AFAP-0006 attestation presented to a service; CLI mints an `afauth-trust` JWT via the trust container and the reference server verifies it against trust's JWKS over the docker network |
 | `attested-only-reject` | §9.2 attested_only enforcement; the third reference server runs with `ATTESTED_ONLY=1` and rejects un-attested signups with 401 `attestation_required`, no ledger row written |
 | `owner-invitation-claim` | §7 owner-binding ceremony; CLI invites, the reference server's e2e email handler captures the magic-link details, `/e2e/claim` drives `handleClaimCompletion` with a synthetic `OwnerSession`, account flips UNCLAIMED → CLAIMED |
+| `multi-agent-account` | §10.4.4 one human, many devices; two distinct agent keypairs link to the same human (so they share a `sub_h`) and each signs up at the attested_only server — the second device attaches to the first's account: both introspections report the same `account_id` while the agent DIDs differ |
 
 All ADR-0005 §Status follow-ons are now covered.
 
