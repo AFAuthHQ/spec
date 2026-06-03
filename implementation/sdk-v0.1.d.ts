@@ -109,7 +109,10 @@ declare module '@afauthhq/core' {
     | 'owner_binding_blocked' | 'account_expired' | 'rate_limit_exceeded'
     | 'malformed_request' | 'unsupported_recipient_type'
     // §7.5 freshness floor: owner session present but stale.
-    | 'owner_session_too_stale';
+    | 'owner_session_too_stale'
+    // §10.4.4 per-principal uniqueness: a second account for a principal
+    // that already has one ("same human, same bucket").
+    | 'principal_already_registered';
 
   export class AFAuthError extends Error {
     readonly code: AFAuthErrorCode;

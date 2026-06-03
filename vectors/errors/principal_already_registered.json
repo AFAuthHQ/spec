@@ -1,0 +1,13 @@
+{
+  "name": "principal_already_registered",
+  "description": "A service that enforces per-principal uniqueness (§10.4.4) received an attested signup whose `(iss, sub_h)` already holds an account. The service MUST NOT create the second account, and the rejection MUST NOT disclose the DID of the existing one.",
+  "section": "§10.4.4, §11.3",
+  "code": "principal_already_registered",
+  "http_status": 409,
+  "envelope": {
+    "error": {
+      "code": "principal_already_registered",
+      "message": "An account already exists for this principal"
+    }
+  }
+}
