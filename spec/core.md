@@ -225,6 +225,7 @@ The full JSON Schema is provided alongside this specification at [`../schemas/we
 - `features` (array of strings): Optional features the service supports. Defined values: `"attestation"`, `"key_rotation"`, `"attested_session"`. `"attested_session"` indicates the service maintains attested sessions with periodic re-presentation (§10.7) rather than gating attestation only at signup. Absent features MUST NOT be assumed supported. Two-step invite is normatively required for v0.1 conformance (§7.1) and is not an advertisable feature.
 - `recipient_types` (array of strings): Recipient types the service accepts on the owner-invitation endpoint (§7.2, §7.7). Defined values for v0.1 are `"email"`, `"phone"`, `"oidc"`, and `"did"`. Conforming services MUST accept `"email"` and SHOULD include it in the declared list. If `recipient_types` is absent, agents MUST assume `["email"]`.
 - `limits` (object): Service-declared limits. Defined members: `unclaimed_ttl_seconds`, `unclaimed_rate_limit_per_hour`.
+  - `unclaimed_ttl_seconds` (integer): Optional. The maximum age, in seconds, an account may remain unclaimed before it transitions to `EXPIRED` (§6.1). **Absent — the default and RECOMMENDED posture — means unclaimed accounts never expire**: an agent MAY operate its account indefinitely, and a human claim is a one-way upgrade rather than a precondition for continued operation. Services SHOULD NOT set this field. It exists only for the narrow cases where garbage-collecting abandoned accounts or honouring a data-retention mandate genuinely requires expiry; setting it on the reflex that "inactive accounts should be reaped" is a category error, because an AFAuth account is bound to a key its agent holds, not to a human who may have wandered off. When the field is present, the service computes each account's deadline as `created_at + unclaimed_ttl_seconds` and surfaces it as `unclaimed_expires_at` in signup and introspection responses (§6.4, §6.5); when absent, `unclaimed_expires_at` is omitted.
 - `billing` (object): Pre-claim billing declaration. See Section 9.
 
 ### 4.5 Discovery procedure
@@ -335,8 +336,10 @@ An account is in exactly one state at any time. Conforming services MUST impleme
 | `UNCLAIMED` | Account exists; no owner is bound. Created by signup. |
 | `INVITED` | An owner invitation has been sent; not yet claimed. |
 | `CLAIMED` | Account is bound to an owner via the claim flow. |
-| `EXPIRED` | Account exceeded `unclaimed_ttl_seconds` without being claimed; no longer operable. |
+| `EXPIRED` | Reachable only when the service sets `unclaimed_ttl_seconds` (§4.4): the account exceeded that age without being claimed and is no longer operable. Services that do not set a TTL — the default — never produce this state. |
 | `ARCHIVED` | Account explicitly deleted by the owner; retained for audit/compliance. |
+
+By default, an `UNCLAIMED` account has no expiry: its agent MAY operate it indefinitely, and reaching `CLAIMED` is optional. The `EXPIRED` state and the transitions into it (Appendix A) apply only to services that opt into an `unclaimed_ttl_seconds` limit (§4.4). A conforming service that does not advertise that limit never transitions an account to `EXPIRED`.
 
 ### 6.2 State transitions
 
@@ -346,7 +349,7 @@ See Appendix A for the diagram. Conforming services MUST NOT permit transitions 
 
 The first valid signed request from an unrecognised account DID MUST cause the service to create the account in state `UNCLAIMED`, unless the service requires explicit signup (Section 6.4).
 
-This mode optimizes for agent ergonomics: an agent that has just generated a keypair can call any protected endpoint and have its account auto-created. The service MUST NOT distinguish externally between "implicit signup followed by operation" and a request to a pre-existing account.
+This mode optimizes for agent ergonomics: an agent that has just generated a keypair can call any protected endpoint and have its account auto-created. The service MUST NOT distinguish externally between "implicit signup followed by operation" and a request to a pre-existing account. By default the account so created persists indefinitely (§6.1): the agent is its principal whether or not a human ever claims it.
 
 Services that declare `billing.unclaimed_mode = "attested_only"` (§9) MUST reject implicit-signup attempts lacking a valid `AFAuth-Attestation` header (§10) with `401 Unauthorized` and error code `attestation_required`. The service MUST NOT create the account in this case; the rejection MUST occur before any state transition.
 
@@ -376,8 +379,7 @@ Content-Type: application/json
   "account_id":           "acct_8f3cZ_K9qWmA...",
   "agent_did":            "did:key:z6Mk...",
   "state":                "UNCLAIMED",
-  "created_at":           "2026-05-18T12:00:00Z",
-  "unclaimed_expires_at": "2026-06-17T12:00:00Z"
+  "created_at":           "2026-05-18T12:00:00Z"
 }
 ```
 
@@ -401,10 +403,11 @@ Response:
   "agent_did":            "did:key:z6Mk...",
   "state":                "UNCLAIMED",
   "created_at":           "2026-05-18T12:00:00Z",
-  "unclaimed_expires_at": "2026-06-17T12:00:00Z",
   "owner":                null
 }
 ```
+
+If the service sets an `unclaimed_ttl_seconds` limit (§4.4), the response additionally includes `unclaimed_expires_at`; with no limit — the default — the account does not expire and the field is omitted.
 
 When `state` is `CLAIMED`, the `owner` field MUST be populated:
 
@@ -486,7 +489,7 @@ Each invitation has a service-defined TTL. The protocol gives no normative bound
 
 At most one invitation MAY be pending for an account at any time. A new owner invitation request atomically replaces any prior pending invitation: the prior invitation's token MUST be invalidated, and any subsequent claim attempt using the invalidated token MUST fail with `410 Gone` and error code `invitation_expired`. Atomicity MUST be enforced at the storage layer (for example, via a unique constraint on the account's pending invitation and a serialised update path) to prevent race conditions between concurrent invitation requests.
 
-If an invitation's TTL expires without a successful claim, and no replacement has been issued, the account transitions back to `UNCLAIMED` and the pending email is discarded. If the unclaimed TTL itself elapses while an invitation is pending, the account transitions to `EXPIRED` (see Appendix A).
+If an invitation's TTL expires without a successful claim, and no replacement has been issued, the account transitions back to `UNCLAIMED` and the pending email is discarded. If the service sets an `unclaimed_ttl_seconds` limit (§4.4) and that limit elapses while an invitation is pending, the account transitions to `EXPIRED` (see Appendix A); a service with no such limit — the default — leaves the account in `INVITED` indefinitely. A service that does set a TTL SHOULD NOT issue an invitation whose validity would outlive the account's remaining unclaimed lifetime, so that a human is never shown a claim link already invalidated by expiry by the time they act on it.
 
 This atomicity invariant replaces the "most recent invitation supersedes" model of earlier drafts, which permitted a window in which two concurrent invitations could both be valid; that window is the basis of a known time-of-check / time-of-use class of attack.
 
@@ -1109,13 +1112,15 @@ Allowed transitions:
 |---|---|---|
 | ∅ | `UNCLAIMED` | signup (implicit or explicit) |
 | `UNCLAIMED` | `INVITED` | owner invitation |
-| `UNCLAIMED` | `EXPIRED` | unclaimed TTL expiry |
+| `UNCLAIMED` | `EXPIRED` | unclaimed TTL expiry (only if the service sets `unclaimed_ttl_seconds`, §4.4) |
 | `INVITED` | `CLAIMED` | claim completion (human authenticates) |
 | `INVITED` | `UNCLAIMED` | invitation TTL expiry, no replacement issued |
-| `INVITED` | `EXPIRED` | unclaimed TTL expiry while an invitation is pending |
+| `INVITED` | `EXPIRED` | unclaimed TTL expiry while an invitation is pending (only if the service sets `unclaimed_ttl_seconds`, §4.4) |
 | `CLAIMED` | `ARCHIVED` | owner-initiated delete |
 
 Forbidden transitions: any transition not listed above MUST NOT be permitted by a conforming service.
+
+The two transitions to `EXPIRED` occur only when the service opts into an `unclaimed_ttl_seconds` limit (§4.4). Services that do not set a TTL — the default — never enter `EXPIRED`; an `UNCLAIMED` account then remains operable indefinitely unless and until it is claimed.
 
 ---
 

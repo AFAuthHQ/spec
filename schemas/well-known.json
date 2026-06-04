@@ -54,7 +54,11 @@
     "limits": {
       "type": "object",
       "properties": {
-        "unclaimed_ttl_seconds":         { "type": "integer", "minimum": 0 },
+        "unclaimed_ttl_seconds": {
+          "type": "integer",
+          "minimum": 3600,
+          "description": "Optional. Max age in seconds before an unclaimed account transitions to EXPIRED (§6.1). Omit for no expiry — the default and recommended posture; agent-created accounts then operate indefinitely without a human claim. Set only when garbage collection or a data-retention mandate requires it; if set, MUST be >= 3600."
+        },
         "unclaimed_rate_limit_per_hour": { "type": "integer", "minimum": 0 }
       }
     },
