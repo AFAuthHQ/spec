@@ -432,20 +432,27 @@ async function scenarioTrustLink(opts) {
     'trust.json not written to AFAUTH_HOME',
   );
 
-  // 3. trust.json has the expected shape.
+  // 3. trust.json has the expected shape: a versioned set of bindings
+  //    (an agent may link to more than one attestor). A single `trust link`
+  //    yields exactly one binding.
   const trustState = JSON.parse(
     fs.readFileSync(path.join(opts.tmpDir, 'trust.json'), 'utf8'),
   );
   assert(
-    /^[0-9a-f-]{36}$/.test(trustState.binding_id),
-    `unexpected binding_id: ${trustState.binding_id}`,
+    Array.isArray(trustState.bindings) && trustState.bindings.length === 1,
+    `trust.json should hold exactly one binding, got: ${JSON.stringify(trustState.bindings)}`,
+  );
+  const binding = trustState.bindings[0];
+  assert(
+    /^[0-9a-f-]{36}$/.test(binding.binding_id),
+    `unexpected binding_id: ${binding && binding.binding_id}`,
   );
   // §3.1 keyless mint: there is no bearer token in trust.json — the agent
   // authenticates each /v1/token mint by signing with its account key. The
   // persisted binding carries only the id and its expiry.
   assert(
-    Number.isInteger(trustState.binding_token_expires_at) &&
-      trustState.binding_token_expires_at > 0,
+    Number.isInteger(binding.binding_token_expires_at) &&
+      binding.binding_token_expires_at > 0,
     'binding_token_expires_at missing',
   );
 }
