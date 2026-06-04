@@ -403,17 +403,22 @@ declare module '@afauthhq/server' {
   /**
    * §6.1 / Appendix A TTL sweep. Transitions UNCLAIMED / INVITED
    * accounts to `EXPIRED` once they exceed `unclaimedTtlSeconds` from
-   * their `createdAt`. Spec-mandated transition; the SDK does not run
-   * it automatically because *when* to sweep is service policy. Call
-   * from a scheduled trigger (cron / Workers scheduled trigger /
-   * Lambda EventBridge rule). Idempotent and concurrency-safe — each
-   * `expire()` is atomic at the storage layer.
+   * their `createdAt`. Expiry is opt-in (§4.4): if `unclaimedTtlSeconds`
+   * is omitted — the default — unclaimed accounts never expire and this
+   * sweep is a no-op. The SDK never runs it automatically; *when* to
+   * sweep is service policy. Call from a scheduled trigger (cron /
+   * Workers scheduled trigger / Lambda EventBridge rule). Idempotent and
+   * concurrency-safe — each `expire()` is atomic at the storage layer.
    */
   export function sweepExpiredAccounts(
     store: SweepableAccountStore,
     opts: {
-      /** From discovery's `limits.unclaimed_ttl_seconds` (§4.4). */
-      unclaimedTtlSeconds: number;
+      /**
+       * From discovery's `limits.unclaimed_ttl_seconds` (§4.4). Omit for
+       * no expiry (the default) — the sweep is then a no-op. If provided,
+       * MUST be a positive number of seconds.
+       */
+      unclaimedTtlSeconds?: number;
       /** Overridable for tests; defaults to `() => new Date()`. */
       now?: () => Date;
     },
