@@ -275,6 +275,7 @@ This specification introduces or relies on the following HTTP headers:
 - `AFAuth-Attestation` (introduced, optional): Carries an attestation token, as defined in Section 10.
 - `Content-Digest`: As defined by [RFC9530]. Required for requests with a non-empty body; MUST be omitted otherwise.
 - `Signature-Input`, `Signature`: As defined by [RFC9421]. The account's DID is carried in the `keyid` signature parameter (see §5.2); no separate identity header is defined.
+- `WWW-Authenticate` (response): On a `401 Unauthorized`, the responder returns an AFAuth authentication challenge as defined in §5.7. The headers above travel on the request; this one travels on the response.
 
 ### 5.4 Example
 
@@ -305,7 +306,7 @@ On receiving a signed request, the verifier MUST:
 6. Verify that the `nonce` has not been seen before for this `keyid` within the storage window (see §5.6).
 7. If the request has a non-empty body, verify the `Content-Digest` header matches a SHA-256 hash of the actual body. If the request has no body, the `Content-Digest` header MUST NOT be present.
 
-If any step fails, the verifier MUST cause a `401 Unauthorized` response with an error body (Section 11) indicating the failure reason. The verifier MAY produce this response directly (when it is on the request path), or signal the failure to the service that produces the response.
+If any step fails, the verifier MUST cause a `401 Unauthorized` response with an error body (Section 11) indicating the failure reason, and the response SHOULD include a `WWW-Authenticate` challenge (§5.7). The verifier MAY produce this response directly (when it is on the request path), or signal the failure to the service that produces the response.
 
 ### 5.6 Replay protection
 
@@ -314,6 +315,63 @@ The verifier MUST maintain a set of seen `(keyid, nonce)` tuples covering at lea
 Replay defense is scoped to `keyid` (the cryptographic origin) rather than to the account identifier; this preserves correct replay detection across key rotation (§8), where a single account identifier may be presented under successive verification keys.
 
 Services MAY accept signed requests outside the freshness window for non-mutating `GET` operations, at their discretion, but MUST NOT accept replayed mutating requests.
+
+### 5.7 Authentication challenge (`WWW-Authenticate`)
+
+A response that rejects a request for an authentication-related reason — any `401 Unauthorized` defined by this specification (§5.5, §8.3, §8.4, §9.2, §10.7) — SHOULD include a `WWW-Authenticate` header field carrying an AFAuth challenge, in addition to the error body of Section 11. The challenge lets an agent that has not yet authenticated, or whose authentication was rejected, discover how to recover without out-of-band knowledge of the service.
+
+The challenge uses the `auth-scheme` token `AFAuth` with the `auth-param` syntax of [RFC9110] §11:
+
+```http
+WWW-Authenticate: AFAuth discovery="https://api.example.com/.well-known/afauth", error="attestation_required", attestors="afauth-trust"
+```
+
+AFAuth message signatures (Section 5) are the authentication mechanism; the `AFAuth` scheme token names that mechanism for the purposes of [RFC9110] and is not a credential-bearing scheme — no `Authorization: AFAuth …` request header is defined, as credentials travel in `Signature` / `Signature-Input` (§5.3).
+
+The following `auth-param`s are defined. A responder MUST quote any value that is not a valid [RFC9110] `token` (URLs and space-delimited lists MUST be quoted). Consumers MUST ignore `auth-param`s they do not recognize.
+
+- `discovery` (RECOMMENDED whenever the challenge is emitted): the absolute URL of the service's `/.well-known/afauth` document (Section 4). This is the bootstrap pointer — an agent with no prior knowledge of the service fetches it to learn `service_did`, `signature_algorithms`, `endpoints`, and billing/attestor policy. The challenge carries a pointer, not a copy; the discovery document remains the single source of truth.
+- `error` (OPTIONAL): the reserved error code (§11.3) describing the failure, mirroring `error.code` in the body, so an agent can branch its recovery from the header alone. A responder MUST set `error` only when the request actually attempted AFAuth — that is, it carried a `Signature` / `Signature-Input` (§5) or an `AFAuth-Attestation` (§10). A `401` produced for a request that did not attempt AFAuth (a client using another scheme, or none) MUST NOT carry `error="invalid_signature"`; such a challenge, if emitted at all, is a bare *advertisement* — the scheme token with at most `discovery` — saying only "AFAuth is available here." This keeps AFAuth from stamping a failed-attempt signal onto a rejection it did not cause.
+- `attestors` (OPTIONAL; RECOMMENDED when `error` is `attestation_required` or `invalid_attestation`): a space-delimited list of accepted attestor identifiers (§10.3), equivalent to `billing.accepted_attestors` (§4.4, Section 9). It tells the agent which attestor(s) can satisfy the requirement without a discovery round-trip.
+- `owner_login` (OPTIONAL; permitted when `error` is `owner_authentication_required`): an absolute URL a human owner can visit to authenticate (typically `endpoints.claim_page` or a service login page). The agent surfaces this to its owner; the agent cannot itself satisfy an owner-authentication requirement (§7.5).
+- `realm` (OPTIONAL): an [RFC9110] realm. When present its value SHOULD be the service's `service_did`, letting an agent identify the expected verifier and derive its per-service key (§3.3) before fetching discovery.
+
+Emitting the challenge is a `SHOULD`, not a `MUST`, so that services predating this section remain conformant. An agent MUST NOT require the challenge to be present; when it is absent the agent falls back to fetching `/.well-known/afauth` by the convention of Section 4. A verifier on the request path (Appendix E) emits the challenge directly; it always has `discovery` available, includes `error` only for an actual AFAuth attempt (see `error` above), and SHOULD include `attestors` when configured with the accepted set.
+
+**No primacy on multi-scheme resources.** A resource MAY accept AFAuth alongside other authentication schemes. When it does, the AFAuth challenge MUST be presented as one of possibly several `WWW-Authenticate` challenges; AFAuth claims no preference and MUST NOT suppress, replace, or reorder another scheme's challenge. The service decides whether the AFAuth challenge appears and where it sits — challenge order signals the service's preference per [RFC9110], and AFAuth does not require being first. A service MAY advertise AFAuth only to clients that already attempt it (emit the challenge solely when the request carried AFAuth credentials), keeping AFAuth invisible to purely other-scheme clients.
+
+The challenge introduces no new status code, error body, or state transition; it is an additive response header on the identical rejection path. In particular, the Section 9.2 guarantee that no account is created on an `attestation_required` rejection is unaffected.
+
+A bare advertisement — the request did not attempt AFAuth (a cold client, or one using another scheme):
+
+```http
+WWW-Authenticate: AFAuth discovery="https://api.example.com/.well-known/afauth"
+```
+
+Error challenges — the request attempted AFAuth and it failed:
+
+```http
+WWW-Authenticate: AFAuth discovery="https://api.example.com/.well-known/afauth", error="invalid_signature"
+WWW-Authenticate: AFAuth discovery="https://api.example.com/.well-known/afauth", error="attestation_required", attestors="afauth-trust microsoft-entra-agent-id"
+WWW-Authenticate: AFAuth discovery="https://api.example.com/.well-known/afauth", error="revoked_key"
+```
+
+Presented beside another scheme on a multi-scheme resource — AFAuth is one challenge among several and the service chooses the order:
+
+```http
+WWW-Authenticate: Bearer realm="api", error="invalid_token"
+WWW-Authenticate: AFAuth discovery="https://api.example.com/.well-known/afauth"
+```
+
+### 5.8 Optional authentication (anonymous-allowed endpoints)
+
+AFAuth authentication is per-request and optional by construction: a resource MAY accept AFAuth on endpoints that also allow anonymous (unauthenticated) access, granting an authenticated agent more — higher rate limits, richer data, write access — while still serving callers that present no credentials. Such an endpoint performs *optional verification*:
+
+- If the request presents AFAuth credentials (a `Signature` / `Signature-Input`, or an `AFAuth-Attestation`), the resource verifies them per §5.5 and, on success, treats the caller as the authenticated agent.
+- If the request presents no AFAuth credentials, the resource MUST serve the anonymous response and MUST NOT return `401` — an anonymous-allowed request is not a rejected request, so it carries no `WWW-Authenticate` challenge (§5.7).
+- If credentials are present but invalid, the resource SHOULD reject with `401` and a §5.7 error challenge rather than silently downgrading to anonymous; the client attempted AFAuth and should learn that the attempt failed.
+
+Because an anonymous-allowed endpoint does not reject the unauthenticated caller, the §5.7 challenge is not its discovery mechanism — agents learn that the resource speaks AFAuth from `/.well-known/afauth` (§4), and an AFAuth-capable agent that signs its requests by default simply receives the authenticated treatment with no prior negotiation. (This is distinct from anonymous *AFAuth signup* under `billing.unclaimed_mode = "free"` (§6.3), where the agent does sign — bringing a `did:key` — but no human or attestation is required.)
 
 ---
 
@@ -351,7 +409,7 @@ The first valid signed request from an unrecognised account DID MUST cause the s
 
 This mode optimizes for agent ergonomics: an agent that has just generated a keypair can call any protected endpoint and have its account auto-created. The service MUST NOT distinguish externally between "implicit signup followed by operation" and a request to a pre-existing account. By default the account so created persists indefinitely (§6.1): the agent is its principal whether or not a human ever claims it.
 
-Services that declare `billing.unclaimed_mode = "attested_only"` (§9) MUST reject implicit-signup attempts lacking a valid `AFAuth-Attestation` header (§10) with `401 Unauthorized` and error code `attestation_required`. The service MUST NOT create the account in this case; the rejection MUST occur before any state transition.
+Services that declare `billing.unclaimed_mode = "attested_only"` (§9) MUST reject implicit-signup attempts lacking a valid `AFAuth-Attestation` header (§10) with `401 Unauthorized` and error code `attestation_required`. The service MUST NOT create the account in this case; the rejection MUST occur before any state transition. The `401` response SHOULD carry a `WWW-Authenticate` challenge (§5.7) with `error="attestation_required"` and an `attestors` list drawn from `billing.accepted_attestors`, so the agent learns which attestor to obtain a token from.
 
 ### 6.4 Explicit signup
 
@@ -682,7 +740,7 @@ The owner binding carries forward service-side. Attestor-issued `sub_h` (§10.4)
 
 ### 8.3 Revocation
 
-Each service MUST maintain a local revocation list of agent credential DIDs whose keys have been retired (through rotation or owner-initiated revocation). Requests signed by a revoked key MUST be rejected with `401 Unauthorized` and the error code `revoked_key` (Section 11). Revoking a whole account (§8.4) lists every one of its agent credential DIDs.
+Each service MUST maintain a local revocation list of agent credential DIDs whose keys have been retired (through rotation or owner-initiated revocation). Requests signed by a revoked key MUST be rejected with `401 Unauthorized` and the error code `revoked_key` (Section 11), and the response SHOULD carry a `WWW-Authenticate` challenge (§5.7) with `error="revoked_key"`; the agent's correct recovery is to re-key (§8.2) or re-link rather than to retry under the same DID. Revoking a whole account (§8.4) lists every one of its agent credential DIDs.
 
 Cross-service revocation distribution is NOT part of this specification. Services MAY publish their revocation lists as part of an aggregated abuse feed (e.g., through a centralised network operator), but no inter-service revocation transport is mandated.
 
@@ -733,7 +791,7 @@ Conforming services MUST honour their declared mode. Agents MUST read the discov
 
 ### 9.2 Attestation requirement
 
-If `unclaimed_mode` is `"attested_only"`, the service MUST reject signup requests that lack an `AFAuth-Attestation` header. The error response (Section 11) SHOULD identify the required attestation type via the `details` field.
+If `unclaimed_mode` is `"attested_only"`, the service MUST reject signup requests that lack an `AFAuth-Attestation` header. The error response (Section 11) SHOULD identify the required attestation type via the `details` field and, on the `WWW-Authenticate` challenge (§5.7), via the `attestors` parameter.
 
 ---
 
@@ -867,7 +925,7 @@ Outside of an **attested session** (§10.7), attestations MUST be presented on a
 
 ### 10.7 Attested sessions (periodic re-presentation)
 
-A service operating in `attested_only` mode (§9.2) MAY require an agent to keep a currently-valid attestation **on file**, rather than presenting one on every request (§10.6). The service records the expiry of the most recently verified attestation for an account and, while the account is within its **freshness window**, serves that account's signed requests without a new attestation. When the window lapses, the service MUST challenge the next request with `401 Unauthorized` and `attestation_required`; the agent's correct response is to obtain a fresh attestation (§10) and retry. A service that offers this behaviour SHOULD advertise the `attested_session` feature (§4.4).
+A service operating in `attested_only` mode (§9.2) MAY require an agent to keep a currently-valid attestation **on file**, rather than presenting one on every request (§10.6). The service records the expiry of the most recently verified attestation for an account and, while the account is within its **freshness window**, serves that account's signed requests without a new attestation. When the window lapses, the service MUST challenge the next request with `401 Unauthorized` and `attestation_required`, and SHOULD include a `WWW-Authenticate` challenge (§5.7) naming the accepted `attestors`; the agent's correct response is to obtain a fresh attestation (§10) and retry. A service that offers this behaviour SHOULD advertise the `attested_session` feature (§4.4).
 
 The freshness window is determined by one of two modes:
 
@@ -911,7 +969,7 @@ Field semantics:
 | Status | Used for |
 |---|---|
 | `400 Bad Request` | Malformed request (invalid JSON, missing required fields, invalid DID syntax) |
-| `401 Unauthorized` | Signature verification failed, key revoked, or attestation invalid |
+| `401 Unauthorized` | Signature verification failed, key revoked, or attestation invalid. Responses SHOULD carry a `WWW-Authenticate` challenge (§5.7). |
 | `403 Forbidden` | Operation not permitted in the current state (e.g., agent-initiated ownership change post-claim) |
 | `404 Not Found` | Account does not exist (only when implicit signup is disabled) |
 | `409 Conflict` | State conflict (e.g., account already `CLAIMED`; a re-key/revoke target that is not `CLAIMED`; a re-key `new_account_did` that already names an account) |
@@ -1050,6 +1108,16 @@ Earlier drafts of this specification reserved an `AFAuth-Account` field; that re
 ### 14.3 DID Methods
 
 This specification uses the `did:key` method [W3C-DID-KEY]. No new DID method is introduced.
+
+### 14.4 Authentication scheme registration
+
+This specification requests registration of the following scheme in the IANA "HTTP Authentication Schemes" registry per [RFC9110]:
+
+| Authentication Scheme Name | `AFAuth` |
+|---|---|
+| Pointer to specification text | This document, §5.7 |
+| Status | Provisional |
+| Notes | Used only in `WWW-Authenticate` response challenges (§5.7). Request credentials are carried in the `Signature` / `Signature-Input` fields per [RFC9421]; no `Authorization: AFAuth …` request header is defined. |
 
 ---
 
@@ -1406,6 +1474,12 @@ Agent account identifiers are `did:key` (§3.1); `did:web` is deliberately NOT a
 
 The two-step verify (Section 7.1) is the protocol's central security primitive and is therefore a MUST, not a SHOULD. Implementations that allow agent-key-alone ownership binding are not conformant. The intent is to make a stolen-key-redirects-email attack impossible at the protocol level rather than relying on implementer diligence.
 
+### D.8 The `WWW-Authenticate` challenge
+
+A `401` originally carried only an error body (Section 11), readable only by an agent that already knew to attempt AFAuth and to parse AFAuth errors. §5.7 adds a standards-native `WWW-Authenticate` challenge so that a `401` is self-describing: from the response alone an agent with no prior knowledge of the service learns that the resource speaks AFAuth, where its discovery document lives, why the request failed, and — for attestation failures — which attestors can satisfy it. This mirrors the OAuth bearer challenge ([RFC9110] §11) and the way Protected Resource Metadata is advertised on a `401`, adapted to a signature-based, self-sovereign scheme. It is purely additive: status code, error body, and state machine are unchanged; emission is a `SHOULD`, so services predating this section stay conformant; and the challenge is a pointer to discovery, never a copy, so no second source of truth can drift. The change generalizes the recovery loop already defined for attested sessions (§10.7) — challenge, obtain a fresh attestation, retry — to the cold-start, signature-staleness, and revocation cases, so each is recoverable without out-of-band knowledge.
+
+The challenge is deliberately *additive and non-presumptuous*. A `WWW-Authenticate` set is the resource's statement of how to authenticate, so AFAuth must not behave as though it owns every `401`: it is one challenge among possibly several, it never reorders or suppresses another scheme's challenge, and the service decides whether it appears at all. Critically, `error` is set only when the request actually attempted AFAuth — a bare `invalid_signature` from a client using another scheme (or none) becomes a discovery-only advertisement, never a "your AFAuth signature failed" claim. This lets a service offer AFAuth as a secondary or co-equal option without AFAuth conscripting its other clients.
+
 ---
 
 ## Appendix E: Edge Verification Pattern
@@ -1414,7 +1488,7 @@ This appendix is **non-normative**. It describes a deployment pattern in which t
 
 ### E.1 Pattern
 
-The verifier intercepts the inbound request, performs §5.5 verification, and on success forwards the request to the service with the verified identity exposed as request headers. The service reads the headers and proceeds with business logic. On verification failure, the verifier produces the `401 Unauthorized` response directly; the service never sees the request.
+The verifier intercepts the inbound request, performs §5.5 verification, and on success forwards the request to the service with the verified identity exposed as request headers. The service reads the headers and proceeds with business logic. On verification failure, the verifier produces the `401 Unauthorized` response directly — including the `WWW-Authenticate` challenge of §5.7, which it can populate with `discovery` and `error` (and `attestors`, when configured with the accepted set) without consulting the service; the service never sees the request.
 
 ### E.2 Recommended upstream headers
 

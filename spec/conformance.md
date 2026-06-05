@@ -30,6 +30,10 @@ A conforming service MUST:
 10. **Owner re-key & revoke (§8.2, §8.4).** A service that advertises `key_rekey` / `key_revocation` MUST gate them on a fresh owner-authenticated session (§7.5) — never the agent signature — and MUST verify the session owns the target account: reject a stale session with `owner_session_too_stale`, a non-owner with `owner_authentication_required` (and no session with `401`), and a non-`CLAIMED` target with `not_claimed`. After revoke — and, for the old DID, after re-key — a request signed by the retired key MUST fail with `401 revoked_key`.
 11. **Attested sessions (§10.7).** A service that advertises `attested_session` MUST treat a presented attestation as valid only until its `exp` (strict mode) — or, in extended mode, until a service-chosen window `T` refreshed on each presentation — and MUST challenge a request from an established account whose freshness window has lapsed with `401 attestation_required` rather than serving it on the agent signature alone. It MUST reject an already-expired attestation presented as a refresh (§10.2).
 
+A conforming service SHOULD additionally:
+
+12. **Authentication challenge (§5.7).** Emit a `WWW-Authenticate: AFAuth …` challenge on `401 Unauthorized`, carrying at least `discovery`, and — on `attestation_required` / `invalid_attestation` — `attestors`. Emission is RECOMMENDED, not required. When emitted: the challenge MUST be syntactically valid per [RFC9110]; its `error`, if present, MUST equal the body's `error.code` and MUST be set only when the request attempted AFAuth (carried `Signature-Input` or `AFAuth-Attestation`) — otherwise the challenge is a bare advertisement with no `error`; and on a resource that also accepts other schemes the AFAuth challenge MUST be one of possibly several `WWW-Authenticate` challenges, never suppressing or reordering another scheme's.
+
 ## Agent conformance (planned probes)
 
 A conforming agent MUST:
@@ -40,6 +44,10 @@ A conforming agent MUST:
 4. **Key handling.** Store private keys per §3.2 / §12.1 recommendations; rotate per §8.
 5. **Claim flow.** Initiate the two-step invitation per §7.2; treat `410 Gone` on an invitation as a normal expiry condition.
 6. **Attestation refresh (§10.7).** On `401 attestation_required` from a service with which it has an established account, an agent SHOULD obtain a fresh attestation (§10) and retry the request. It MUST NOT treat a transient mint failure as terminal, and MUST stop and surface a revoked or paused binding (a refused mint) to the operator rather than retrying indefinitely.
+
+A conforming agent SHOULD additionally:
+
+7. **Authentication challenge (§5.7).** Read the `WWW-Authenticate: AFAuth …` challenge on a `401` to bootstrap discovery (`discovery`) and route recovery (`error`, and `attestors` for attestation failures). It MUST NOT require the challenge to be present — when absent, fall back to fetching `/.well-known/afauth` by convention (§4) — and MUST ignore `auth-param`s it does not recognize.
 
 ## Versioning
 
