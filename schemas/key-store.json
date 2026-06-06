@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://afauth.org/schemas/key-store.json",
+  "title": "AFAuth agent key store",
+  "description": "Schema for the agent keypair file persisted at $AFAUTH_HOME/key.json (default ~/.afauth/key.json), written with file mode 0600. This is a client-local interop convention so a human links an agent once and every AFAuth client on the machine reuses the same identity — it is NOT part of the wire protocol. See spec/storage.md. Readers MUST ignore unknown fields (forward-compatibility).",
+  "type": "object",
+  "required": [
+    "version",
+    "algorithm",
+    "did_key",
+    "public_key_hex",
+    "private_key_seed_hex"
+  ],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "On-disk format version. v0.1 ships version 1; a reader that does not understand the version MUST refuse the file rather than guess."
+    },
+    "algorithm": {
+      "const": "ed25519",
+      "description": "Signature algorithm for this keypair. v0.1: ed25519 only."
+    },
+    "did_key": {
+      "type": "string",
+      "pattern": "^did:key:z.+",
+      "description": "The did:key identifier for public_key_hex. A loader MUST verify it equals the did:key derived from the public key (tamper/truncation check)."
+    },
+    "public_key_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Raw 32-byte Ed25519 public key, lowercase hex. A loader MUST verify it equals the public key derived from private_key_seed_hex."
+    },
+    "private_key_seed_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Raw 32-byte Ed25519 seed (private key material), lowercase hex. The expanded 64-byte signing key is derived at sign time and never persisted. Treat as secret; the file MUST be mode 0600."
+    }
+  }
+}

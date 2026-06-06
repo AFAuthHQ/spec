@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://afauth.org/schemas/trust-store.json",
+  "title": "AFAuth agent trust-attestor bindings",
+  "description": "Schema for the trust-attestor binding file persisted at $AFAUTH_HOME/trust.json (default ~/.afauth/trust.json), written with file mode 0600. Holds the agent's link(s) to one or more trust attestors (AFAP-0006, §10) so a human-on-the-hook signal can be minted on demand. Client-local interop convention, not part of the wire protocol — see spec/storage.md. Readers MUST ignore unknown fields.",
+  "type": "object",
+  "required": ["version", "bindings"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "enum": [1, 2],
+      "description": "On-disk format version. 2 is canonical: a `bindings` array, so an agent may hold several attestor links at once. Version 1 held a single binding inline at the top level (the same per-binding fields, no `bindings` array); a conformant reader SHOULD migrate a v1 file to v2 on load."
+    },
+    "bindings": {
+      "type": "array",
+      "description": "The agent's attestor bindings, keyed logically by base_url. Empty when the agent has linked no attestor.",
+      "items": { "$ref": "#/$defs/binding" }
+    }
+  },
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "required": [
+        "base_url",
+        "agent_did",
+        "binding_id",
+        "binding_token_expires_at"
+      ],
+      "properties": {
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The attestor's base URL, e.g. https://trust.afauth.org. This is the binding's logical key; a comparison ignores a trailing slash. Re-linking the same base_url replaces the binding in place rather than appending a duplicate."
+        },
+        "iss": {
+          "type": "string",
+          "description": "The attestor's issuer identifier — the minted JWT's `iss` claim, e.g. \"afauth-trust\". This is exactly what a service lists in billing.accepted_attestors (§4.4), so it is the value reconciled before sending an attestation. The attestor does not announce it at link time; it is learned from the first minted token and cached here, so it is absent until the first mint."
+        },
+        "agent_did": {
+          "type": "string",
+          "pattern": "^did:key:z.+",
+          "description": "The did:key this binding was minted for. A binding whose agent_did differs from the active key is ORPHANED (e.g. left behind by a key rotation) and MUST NOT be used to mint or send an attestation — the JWT would assert the old DID while requests are signed by the new key. A binding with no recorded agent_did (legacy/hand-edited) is treated as not-orphaned."
+        },
+        "binding_id": {
+          "type": "string",
+          "description": "Opaque binding identifier issued by the attestor at link time. There is no bearer token: the agent authenticates mints by signing the attestor's token endpoint with its account key (§3.1 keyless mint)."
+        },
+        "binding_token_expires_at": {
+          "type": "integer",
+          "description": "Unix seconds when the binding lapses if left unused (the inactivity window). The attestor slides this forward on every successful mint; a client SHOULD refresh the cached value from the mint response. 0 means no expiry was reported (treated as not-expired)."
+        },
+        "verification": {
+          "type": "string",
+          "enum": ["email", "oauth", "payment"],
+          "description": "The strongest human-verification method the attestor reported at the most recent mint. Cached for display (e.g. `afauth status`) without a network call; it MAY lag the attestor since it is refreshed only when a token is minted."
+        },
+        "verification_seen_at": {
+          "type": "integer",
+          "description": "Unix seconds when `verification` was last refreshed from a mint."
+        }
+      }
+    }
+  }
+}
