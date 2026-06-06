@@ -15,8 +15,11 @@ This repository is the normative specification.
 - [`spec/core.md`](spec/core.md) — the protocol specification
 - [`spec/conformance.md`](spec/conformance.md) — conformance criteria for agent and service roles
 - [`spec/directory.md`](spec/directory.md) — informational: non-normative service-directory convention (AFAP-0003)
+- [`spec/storage.md`](spec/storage.md) — informational: the agent-home layout (`~/.afauth/key.json`, `trust.json`) that lets every client on a machine share one identity + one human link
 - [`schemas/well-known.json`](schemas/well-known.json) — JSON Schema for the `/.well-known/afauth` discovery document
 - [`schemas/listing.json`](schemas/listing.json) — JSON Schema for service-directory listings (informational, AFAP-0003)
+- [`schemas/key-store.json`](schemas/key-store.json) — JSON Schema for the agent keypair file (`~/.afauth/key.json`); see [`spec/storage.md`](spec/storage.md)
+- [`schemas/trust-store.json`](schemas/trust-store.json) — JSON Schema for the trust-attestor binding file (`~/.afauth/trust.json`); see [`spec/storage.md`](spec/storage.md)
 - [`vectors/`](vectors/) — Appendix C test vectors:
     - [`signatures/`](vectors/signatures/) (§C.1, §C.2 — canonical input + reference signatures)
     - [`discovery/`](vectors/discovery/) (§C.3 — well-formed / forward-compat / malformed discovery docs)
