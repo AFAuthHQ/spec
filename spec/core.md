@@ -890,7 +890,7 @@ Services MAY use `sub_h` as a per-service uniqueness key for the human behind an
 
 Services that accept attestations from more than one attestor MUST scope `sub_h` by `(iss, sub_h)` rather than by `sub_h` alone, since different attestors derive independent pseudonym spaces for the same human.
 
-A service MAY group a human's agents into a **single account** keyed on `(iss, sub_h)`: when an attested signup presents an `(iss, sub_h)` that already has an account, the new agent DID is **attached to that account** rather than creating a second one — "one account, many devices", the way a human signs into one account from several devices. The account is then identified by a service-local `account_id` (§6) distinct from any verification key, and holds one or more agent credentials. Because `sub_h` is keyed on the principal and not the verification key (§10.4.2, §10.5.1), this grouping is unaffected by key rotation (§8.1) and by revoke-then-rebind to the same principal. A service that groups this way SHOULD bucket its anti-abuse state (free-tier quota, rate limits, bans) on the account (equivalently on `(iss, sub_h)`), so that a human's agents share one bucket and no legitimate multi-device user is locked out. Runtime-only attestations carry no `sub_h` (§10.4.1) and assert no principal, so each such agent gets its own singleton account. This grouping is a local-policy convenience and does not relax the attestor-side anti-Sybil caveats of §10.4.5 and §12.9.
+A service MAY group a human's agents into a **single account** keyed on `(iss, sub_h)`: when an attested signup presents an `(iss, sub_h)` that already has an account, the new agent DID is **attached to that account** rather than creating a second one — "one account, many devices", the way a human signs into one account from several devices. The account is then identified by a service-local `account_id` (§6) distinct from any verification key, and holds one or more agent credentials. Because `sub_h` is keyed on the principal and not the verification key (§10.4.2, §10.5.1), this grouping is unaffected by key rotation (§8.1) and by revoke-then-rebind to the same principal. A service that groups this way SHOULD bucket its anti-abuse state (free-tier quota, rate limits, bans) on the account (equivalently on `(iss, sub_h)`), so that a human's agents share one bucket and no legitimate multi-device user is locked out. Runtime-only attestations carry no `sub_h` (§10.4.1) and assert no principal, so each such agent gets its own singleton account. This grouping is a local-policy convenience and does not relax the attestor-side anti-Sybil caveats of §10.4.5 and §12.9. When the same attestor also issues OIDC ID Tokens so humans can sign in (§10.8), a service that groups this way MUST treat the attestation issuer and the OIDC issuer URL as one issuer identity when keying the account, so that the agent's attested signup and the human's sign-in converge (§10.8.4).
 
 #### 10.4.5 What `sub_h` is not
 
@@ -944,6 +944,44 @@ In all modes:
 - The freshness window bounds revocation latency: a binding revoked or paused at the attestor (§8.4) takes effect at the service within the window, because the agent can no longer mint a replacement attestation (§10). Strict mode bounds this latency to the attestation TTL (≤ §10.2); extended mode bounds it to `T`.
 
 An attested session carries no other state and confers no authority beyond confirming the binding remains live; it does not alter the account state machine (§6) or any owner-binding classification (§7.5).
+
+### 10.8 Human sign-in via the trust attestor (OpenID Provider)
+
+§10.1–§10.7 gate an *agent's* signed requests. This section defines how a *human* signs in to a service and lands in the account their agent already created — "Sign in with AFAuth", the agent-first analogue of "Sign in with Google". It builds entirely on the pairwise principal `(iss, sub_h)` of §10.4 and adds no new trust root.
+
+The trust attestor (§10.3.1) MAY additionally operate as an OpenID Provider [OIDC-Core]. The requirements below apply when it does. An attestor that does not offer human sign-in is unaffected.
+
+#### 10.8.1 Endpoints and flow
+
+- The attestor MUST publish an OpenID Provider configuration document [OIDC-Discovery] at `https://trust.afauth.org/.well-known/openid-configuration`, advertising at minimum its `issuer`, `authorization_endpoint`, `token_endpoint`, and `jwks_uri`.
+- The advertised `issuer` MUST be the URL `https://trust.afauth.org`. This is the attestor's OIDC issuer identifier; it is a distinct syntactic form from the bare-string attestation `iss` of §10.3.1, and §10.8.4 governs how a service reconciles the two.
+- The attestor MUST implement the Authorization Code flow with PKCE [RFC7636] using the `S256` code-challenge method. The implicit and hybrid flows MUST NOT be offered. Authorization codes MUST be single-use and short-lived.
+- The `jwks_uri` SHOULD be the same JWKs document used for attestation verification (§10.3.1), so a consuming service verifies ID Tokens with keys it already trusts.
+- The human authenticates to the attestor as the same human-controlled account that backs the agent binding of §10.3.1. The attestor returns an authorization code to the service's registered redirect URI, which the service exchanges at the token endpoint for an ID Token.
+
+#### 10.8.2 ID Token claims
+
+The ID Token MUST conform to [OIDC-Core] and additionally:
+
+- `iss` MUST be `https://trust.afauth.org`.
+- `aud` MUST be the relying service's `service_did`, established at client registration (§10.8.3). A service MUST reject an ID Token whose `aud` does not match its own `service_did`.
+- `sub` MUST be the pairwise pseudonym `sub_h` that the attestor derives for `(principal, aud)` per §10.4 — that is, **the identical value the attestor places in the `sub_h` claim of an attestation issued to the same service for the same human.** This equality is the convergence guarantee: the agent's attested signup and the human's sign-in resolve to one `(iss, sub_h)`.
+- `exp` MUST be in the future at verification; the attestor SHOULD keep the ID Token short-lived.
+- `nonce` MUST be echoed when the service supplied one at the authorization endpoint.
+
+The ID Token MUST NOT carry personal data, consistent with §10.3.1. `sub` is the pairwise pseudonym, never an email, name, or other identifier.
+
+#### 10.8.3 Client registration
+
+A service that offers human sign-in registers with the attestor as an OIDC client. The registration MUST bind, at minimum, a `client_id`, the service's `service_did`, and an allowlist of exact `redirect_uris`. The registered `service_did` MUST equal the value the service uses as its `aud` / `service_did` for attestation (§10.2, §4.3), because that value is the audience input to the §10.4.3 `sub_h` derivation; a mismatch yields a different `sub`, and the human lands in a different (empty) account. The attestor MUST reject an authorization request whose `redirect_uri` is not in the registered allowlist, before issuing any code.
+
+#### 10.8.4 Issuer canonicalization (convergence requirement)
+
+A service that groups a human's agents into one account keyed on `(iss, sub_h)` (§10.4.4) and also offers human sign-in MUST treat the bare-string attestation issuer `afauth-trust` (§10.3.1) and the OIDC issuer URL `https://trust.afauth.org` as **the same issuer identity** when computing the account key. Equivalently, the service MUST canonicalize both forms to a single issuer identifier — RECOMMENDED: the URL `https://trust.afauth.org` — before lookup. A service that skips this step keys the agent's attested signup and the human's sign-in under two different `iss` values, so the human lands in a new, empty account instead of the one their agent created.
+
+#### 10.8.5 What sign-in does and does not do
+
+Signing in authenticates the human principal behind the account identified by `(iss, sub_h)`. What access a service grants on a successful sign-in is local policy, consistent with §10 throughout. Sign-in is authentication, not ownership transfer: it does not by itself perform the §7 claim that binds an `owner` and raises the §7.5 owner-binding floor. A service MAY treat a first successful human sign-in as sufficient to expose the agent-created account to its human principal, and MAY separately run the §7 claim ceremony to establish a recoverable owner binding.
 
 ---
 
@@ -1135,6 +1173,7 @@ This specification requests registration of the following scheme in the IANA "HT
 - **[RFC5321]** Klensin, J., "Simple Mail Transfer Protocol", RFC 5321, October 2008.
 - **[RFC5869]** Krawczyk, H. and P. Eronen, "HMAC-based Extract-and-Expand Key Derivation Function (HKDF)", RFC 5869, May 2010.
 - **[RFC7519]** Jones, M., Bradley, J., and N. Sakimura, "JSON Web Token (JWT)", RFC 7519, May 2015.
+- **[RFC7636]** Sakimura, N., Ed., Bradley, J., and N. Agarwal, "Proof Key for Code Exchange by OAuth Public Clients", RFC 7636, September 2015.
 - **[RFC8032]** Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital Signature Algorithm (EdDSA)", RFC 8032, January 2017.
 - **[RFC8174]** Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.
 - **[RFC8259]** Bray, T., Ed., "The JavaScript Object Notation (JSON) Data Interchange Format", STD 90, RFC 8259, December 2017.
@@ -1142,6 +1181,7 @@ This specification requests registration of the following scheme in the IANA "HT
 - **[RFC9110]** Fielding, R., Ed., Nottingham, M., Ed., and J. Reschke, Ed., "HTTP Semantics", STD 97, RFC 9110, June 2022.
 - **[RFC9421]** Backman, A., Ed., Richer, J., Ed., and M. Sporny, "HTTP Message Signatures", RFC 9421, February 2024.
 - **[RFC9530]** Polli, R. and L. Pardue, "Digest Fields", RFC 9530, February 2024.
+- **[OIDC-Core]** Sakimura, N., Bradley, J., Jones, M. B., de Medeiros, B., and C. Mortimore, "OpenID Connect Core 1.0", OpenID Foundation, November 2014.
 - **[OIDC-Discovery]** Sakimura, N., Bradley, J., Jones, M. B., and E. Jay, "OpenID Connect Discovery 1.0", OpenID Foundation, November 2014.
 - **[W3C-DID-CORE]** Sporny, M., Longley, D., Sabadello, M., Reed, D., Steele, O., and C. Allen, "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, July 2022.
 - **[W3C-DID-KEY]** Longley, D., and D. Zagidulin, "The did:key Method v0.7", W3C Community Group Report.
